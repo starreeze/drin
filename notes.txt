@@ -1,0 +1,2 @@
+1. do everything in train_step - update metric, optimizers, etc.
+2. use tensor() function instead of Tensor() constructor 

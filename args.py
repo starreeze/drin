@@ -1,0 +1,10 @@
+max_bert_len = 512
+CLS = 101
+SEP = 102
+batch_size = 4
+num_entity_sentence = 3
+bert_embed_dim = 768
+seed = 0
+num_candidates = 101
+qid2entity_answer_path = "/home/data_91_c/xsy/mel-dataset/wikimel/candidates/qid2ne.json"
+preprocess_dir = "/home/data_91_c/xsy/mel-dataset/text_preprocessed/"
