@@ -1,7 +1,7 @@
 max_bert_len = 512
 CLS = 101
 SEP = 102
-batch_size = 4
+batch_size = 8
 num_entity_sentence = 3
 bert_embed_dim = 768
 seed = 0

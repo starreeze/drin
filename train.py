@@ -28,6 +28,8 @@ class MELDataset(Dataset):
         self.lookup = lookup
         self.tokenizer = tokenizer
         self.mention = np.load(os.path.join(preprocess_dir, "mention-text-raw_%s.npy" % type))
+        self.start_position = np.load(os.path.join(preprocess_dir, "start-pos_%s.npy" % type))
+        self.end_position = np.load(os.path.join(preprocess_dir, "end-pos_%s.npy" % type))
         self.entity_qid = np.load(os.path.join(preprocess_dir, "entity-name-raw_%s.npy" % type)).reshape(
             (-1, num_candidates)
         )
@@ -38,17 +40,32 @@ class MELDataset(Dataset):
 
     def __getitem__(self, idx):
         mention_text = self.mention[idx]
+        start, end = self.start_position[idx], self.end_position[idx]
         entity_text = list(map(self.qid2name.get, self.entity_qid[idx]))
         mention_token: dict[str, torch.Tensor] = self.tokenizer(
             mention_text, return_tensors="pt", padding=True, truncation=True
-        ).data
-        mention_token = {
-            k: torch.constant_pad_nd(v.squeeze(0), [0, max_bert_len - v.shape[1]]) for k, v in mention_token.items()
-        }
-        entity_token: dict[str, list] = self.tokenizer(entity_text).data
+        )
+        mention_extracted = self.extract_mention(mention_token["input_ids"].squeeze(0), start, end)
+        entity_token = self.tokenizer(entity_text)
         answer = self.lookup[self.answer[idx]]
         entities_zipped = self.zip_entities(entity_token["input_ids"])
-        return mention_token, entities_zipped[0], entities_zipped[1], answer
+        return mention_extracted[0], mention_extracted[1], entities_zipped[0], entities_zipped[1], answer
+
+    @staticmethod
+    def extract_mention(tokens: torch.Tensor, start, end) -> Tuple[dict[str, torch.Tensor], int]:
+        input_ids = torch.zeros([max_bert_len], dtype=torch.int64)
+        input_ids[0] = CLS
+        input_ids[1 : end - start + 1] = tokens[start + 1 : end + 1]
+        input_ids[end - start + 1] = SEP
+        pad_masks = torch.zeros([max_bert_len], dtype=torch.int64)
+        pad_masks[: end - start + 2] = 1
+        token_type_ids = torch.zeros([max_bert_len], dtype=torch.int64)
+        result_dict = {
+            "input_ids": input_ids,
+            "token_type_ids": token_type_ids,
+            "attention_mask": pad_masks,
+        }
+        return result_dict, end - start + 2
 
     @staticmethod
     def zip_entities(tokens: list[list[int]]) -> Tuple[dict[str, torch.Tensor], torch.Tensor]:
@@ -69,7 +86,6 @@ class MELDataset(Dataset):
             current_len = 0
             for j, sample in enumerate(sentence_entities):
                 input_ids_zipped[i, current_len + 1 : current_len + len(sample)] = torch.tensor(sample[1:])
-                token_type_ids[i, current_len + 1 : current_len + len(sample)] = j
                 current_len += len(sample) - 1
                 entity_token_sep_idx[i, j] = current_len
             pad_masks_zipped[i, : current_len + 1] = 1
@@ -99,9 +115,12 @@ def main():
     pl.seed_everything(seed)
     datasets = create_datasets()
     model = MainModel()
-    trainer = pl.Trainer(enable_checkpointing=False, max_epochs=10, accelerator="gpu", devices=1)
+    trainer = pl.Trainer(
+        enable_checkpointing=False, max_epochs=10, accelerator="gpu", devices=1, enable_progress_bar=False
+    )
+    trainer.test(model, datasets[2], verbose=True)
     trainer.fit(model, datasets[0], datasets[1])
-    trainer.test(model, datasets[2])
+    trainer.test(model, datasets[2], verbose=True)
 
 
 if __name__ == "__main__":
