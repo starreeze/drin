@@ -1,10 +1,8 @@
-# Method
+# Method & Result
 
-symmetric: mention **name** and entity name feed into bert, then calculate cosine similarity for mean value of their token representations.
+## 1st step
 
-# Result
-
-1st step result:
+edit distance
 
 ```python
 >>> top(ans, 1)
@@ -19,7 +17,11 @@ symmetric: mention **name** and entity name feed into bert, then calculate cosin
 0.9864595778574273
 ```
 
-bert w/o finetune:
+## 2nd step
+
+### Just bert, mention name independent
+
+w/o finetune:
 
 ```
 ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
@@ -31,6 +33,36 @@ bert w/o finetune:
 │       top-50_epoch        │    0.9649541974067688     │
 │        top-5_epoch        │     0.853245735168457     │
 └───────────────────────────┴───────────────────────────┘
+```
+
+w finetune (half-val, low lr):
+
+```
+top-1:0.75300   top-5:0.93167   top-10:0.96333  top-20:0.97733  top-50:0.99100
+```
+
+### Just bert, mention in complete sentence
+
+w finetune (1 epoch):
+
+```
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│       top-10_epoch        │    0.9623655676841736     │
+│        top-1_epoch        │    0.7676224708557129     │
+│       top-20_epoch        │     0.980286717414856     │
+│       top-50_epoch        │    0.9896455407142639     │
+│        top-5_epoch        │    0.9305057525634766     │
+└───────────────────────────┴───────────────────────────┘
+```
+
+### Bert + Linear after average, mention in complete sentence
+
+w/o finetune
+
+```
+
 ```
 
 # Explanation
@@ -48,5 +80,4 @@ bert w/o finetune:
 # Problems & future work
 
 1. Finetune won't work: as the loss drops also do the metrics. Loss function (BCE) may be problematic.
-
-2. What will happen if encode the whole mention instead of its name only (with 1. fixed) 
+2. What will happen if encode the whole mention instead of its name only (with 1. fixed)

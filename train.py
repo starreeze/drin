@@ -6,6 +6,7 @@ from __future__ import annotations
 import sys, json
 from pathlib import Path
 from typing import Tuple
+from pdb import set_trace
 
 directory = Path(__file__)
 sys.path.append(str(directory.parent.parent.parent))
@@ -45,14 +46,25 @@ class MELDataset(Dataset):
         mention_token: dict[str, torch.Tensor] = self.tokenizer(
             mention_text, return_tensors="pt", padding=True, truncation=True
         )
-        mention_extracted = self.extract_mention(mention_token["input_ids"].squeeze(0), start, end)
+        mention_token = {k: v.squeeze(0) for k, v in mention_token.items()}
         entity_token = self.tokenizer(entity_text)
         answer = self.lookup[self.answer[idx]]
         entities_zipped = self.zip_entities(entity_token["input_ids"])
-        return mention_extracted[0], mention_extracted[1], entities_zipped[0], entities_zipped[1], answer
+        if pre_extract_mention:
+            mention_extracted = self.extract_mention(mention_token["input_ids"], start, end)
+            return mention_extracted + entities_zipped + (answer,)
+        else:
+            mention_token = {
+                k: torch.constant_pad_nd(v, [0, max_bert_len - v.shape[-1]]) for k, v in mention_token.items()
+            }
+            return (mention_token, start + 1, end + 1) + entities_zipped + (answer,)
 
     @staticmethod
-    def extract_mention(tokens: torch.Tensor, start, end) -> Tuple[dict[str, torch.Tensor], int]:
+    def extract_mention(tokens: torch.Tensor, start, end) -> Tuple[dict[str, torch.Tensor], int, int]:
+        """
+        extract mention name tokens into a new sentence and return with start/end pos
+        start/end_pos: CLS considered (not included in range) but not SEP
+        """
         input_ids = torch.zeros([max_bert_len], dtype=torch.int64)
         input_ids[0] = CLS
         input_ids[1 : end - start + 1] = tokens[start + 1 : end + 1]
@@ -65,10 +77,11 @@ class MELDataset(Dataset):
             "token_type_ids": token_type_ids,
             "attention_mask": pad_masks,
         }
-        return result_dict, end - start + 2
+        return result_dict, 1, end - start + 1
 
     @staticmethod
     def zip_entities(tokens: list[list[int]]) -> Tuple[dict[str, torch.Tensor], torch.Tensor]:
+        """zip all entities into a few sentences for quicker inference on bert"""
         # batch tokens with batch_size = num_entity_sentence
         total = len(tokens)
         num_entity_per_sentence = (total + num_entity_sentence - 1) // num_entity_sentence
@@ -105,9 +118,9 @@ def create_datasets():
     lookup = torch.concatenate([lookup, all_zero_line], dim=0)
     tokenizer = BertTokenizer.from_pretrained("bert-base-cased")
     return [
-        DataLoader(MELDataset("train", qid2name, lookup, tokenizer), batch_size, True),
-        DataLoader(MELDataset("valid", qid2name, lookup, tokenizer), batch_size, False),
-        DataLoader(MELDataset("test", qid2name, lookup, tokenizer), batch_size, False),
+        DataLoader(MELDataset("train", qid2name, lookup, tokenizer), batch_size, True, num_workers=dataloader_workers),
+        DataLoader(MELDataset("valid", qid2name, lookup, tokenizer), batch_size, False, num_workers=dataloader_workers),
+        DataLoader(MELDataset("test", qid2name, lookup, tokenizer), batch_size, False, num_workers=dataloader_workers),
     ]
 
 
@@ -116,11 +129,12 @@ def main():
     datasets = create_datasets()
     model = MainModel()
     trainer = pl.Trainer(
-        enable_checkpointing=False, max_epochs=10, accelerator="gpu", devices=1, enable_progress_bar=False
+        enable_checkpointing=False, max_epochs=epoch, accelerator="gpu", devices=1, enable_progress_bar=False
     )
-    trainer.test(model, datasets[2], verbose=True)
+    # trainer.test(model, datasets[2], verbose=True)
     trainer.fit(model, datasets[0], datasets[1])
     trainer.test(model, datasets[2], verbose=True)
+    set_trace()
 
 
 if __name__ == "__main__":
