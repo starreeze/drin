@@ -1,3 +1,7 @@
+# -*- coding: utf-8 -*-
+# @Date    : 2023-01-04 10:01:03
+# @Author  : Shangyu.Xing (starreeze@foxmail.com)
+
 # bert
 max_bert_len = 512
 bert_embed_dim = 768
@@ -6,14 +10,21 @@ SEP = 102
 
 # model
 finetune_bert = False
-pre_extract_mention = False
-mention_linear_after_avg = True
-entity_linears_after_avg = True
-linear_output_dim = 512
+pre_extract_mention = False  # if True, extract mention names into independent sentences before bert
+mention_final_layer_name = "transformer"
+entity_final_layer_name = "linear"
+linear_output_dim = 768
+transformer_num_layers = 8
+transformer_num_heads = 8
+transformer_ffn_hidden_size = 512
+transformer_ffn_activation = "gelu"
+transformer_dropout = 0.1
+transformer_regularizer = None
 
 # other data
 num_entity_sentence = 3
 num_candidates = 101
+max_token_len = 32  # max token length of both mention and entity
 
 # path
 qid2entity_answer_path = "/home/data_91_c/xsy/mel-dataset/wikimel/candidates/qid2ne.json"

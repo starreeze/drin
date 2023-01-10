@@ -35,7 +35,7 @@ w/o finetune:
 └───────────────────────────┴───────────────────────────┘
 ```
 
-w finetune (half-val, low lr):
+w finetune (1 epoch, val result):
 
 ```
 top-1:0.75300   top-5:0.93167   top-10:0.96333  top-20:0.97733  top-50:0.99100
@@ -59,13 +59,21 @@ w finetune (1 epoch):
 
 ### Bert + Linear after average, mention in complete sentence
 
-w/o finetune
+w/o finetune (5 epoch)
 
 ```
-
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│       top-10_epoch        │     0.970927894115448     │
+│        top-1_epoch        │    0.8261649012565613     │
+│       top-20_epoch        │    0.9820788502693176     │
+│       top-50_epoch        │    0.9900438189506531     │
+│        top-5_epoch        │    0.9480286836624146     │
+└───────────────────────────┴───────────────────────────┘
 ```
 
-# Explanation
+# Explanation for 1st model
 
 1. Why this time much higher?
    Symmetric: mention encoder and entity encoder are the same. In theroy, same inputs yield to same outputs.
@@ -79,5 +87,5 @@ w/o finetune
 
 # Problems & future work
 
-1. Finetune won't work: as the loss drops also do the metrics. Loss function (BCE) may be problematic.
-2. What will happen if encode the whole mention instead of its name only (with 1. fixed)
+1. [x] Finetune won't work: as the loss drops also do the metrics. Loss function (BCE) may be problematic.
+2. [x] What will happen if encode the whole mention instead of its name only (with 1. fixed)
