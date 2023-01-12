@@ -6,7 +6,6 @@ from __future__ import annotations
 import sys, json
 from pathlib import Path
 from typing import Tuple
-from pdb import set_trace
 
 directory = Path(__file__)
 sys.path.append(str(directory.parent.parent.parent))
@@ -28,36 +27,58 @@ class MELDataset(Dataset):
         self.qid2name = qid2name
         self.lookup = lookup
         self.tokenizer = tokenizer
-        self.mention = np.load(os.path.join(preprocess_dir, "mention-text-raw_%s.npy" % type))
+        self.mention_text = np.load(os.path.join(preprocess_dir, "mention-text-raw_%s.npy" % type))
+        if entity_text_type == "name":
+            self.entity_text = np.load(os.path.join(preprocess_dir, "entity-name-raw_%s.npy" % type))
+        elif entity_text_type == "brief":
+            self.entity_text = np.load(os.path.join(preprocess_dir, "entity-brief-raw_%s.npy" % type), mmap_mode="r")
+        else:
+            raise ValueError("entity_text_type must be either 'name' or 'brief'")
+        self.entity_text = self.entity_text.reshape((-1, num_candidates))
         self.start_position = np.load(os.path.join(preprocess_dir, "start-pos_%s.npy" % type))
         self.end_position = np.load(os.path.join(preprocess_dir, "end-pos_%s.npy" % type))
-        self.entity_qid = np.load(os.path.join(preprocess_dir, "entity-name-raw_%s.npy" % type)).reshape(
-            (-1, num_candidates)
-        )
         self.answer = np.load(os.path.join(preprocess_dir, "answer_%s.npy" % type))
+        if mention_final_layer_name == "multimodal":
+            self.mention_image = np.load(os.path.join(preprocess_dir, "mention-image_%s.npy" % type), mmap_mode="r")
+        if entity_final_layer_name == "multimodal":
+            self.entity_image = np.load(os.path.join(preprocess_dir, "entity-image_%s.npy" % type), mmap_mode="r")
 
     def __len__(self):
-        return len(self.mention)
+        return len(self.mention_text)
 
     def __getitem__(self, idx):
-        mention_text = self.mention[idx]
+        mention_text = self.mention_text[idx]
         start, end = self.start_position[idx], self.end_position[idx]
-        entity_text = list(map(self.qid2name.get, self.entity_qid[idx]))
+        if entity_text_type == "name":
+            entity_text = list(map(self.qid2name.get, self.entity_text[idx]))
+        elif entity_text_type == "brief":
+            entity_text = list(self.entity_text[idx])
+        else:
+            raise ValueError("entity_text_type must be either 'name' or 'brief'")
         mention_token: dict[str, torch.Tensor] = self.tokenizer(
             mention_text, return_tensors="pt", padding=True, truncation=True
         )
         mention_token = {k: v.squeeze(0) for k, v in mention_token.items()}
-        entity_token = self.tokenizer(entity_text)
         answer = self.lookup[self.answer[idx]]
-        entities_zipped = self.zip_entities(entity_token["input_ids"])
+        if num_entity_sentence:
+            entity_token = self.tokenizer(entity_text)
+            entities_processed = self.zip_entities(entity_token["input_ids"])
+        else:
+            entity_token = self.tokenizer(entity_text, return_tensors="pt", padding=True, truncation=True)
+            entity_token = {
+                k: torch.constant_pad_nd(v, [0, max_bert_len - v.shape[-1]]) for k, v in entity_token.items()
+            }
+            entities_processed = (entity_token, 0)
+        mention_image = self.mention_image[idx] if mention_final_layer_name == "multimodal" else 0
+        entity_image = self.entity_image[idx] if entity_final_layer_name == "multimodal" else 0
         if pre_extract_mention:
             mention_extracted = self.extract_mention(mention_token["input_ids"], start, end)
-            return mention_extracted + entities_zipped + (answer,)
+            return mention_extracted + (mention_image,) + entities_processed + (entity_image, answer)
         else:
             mention_token = {
                 k: torch.constant_pad_nd(v, [0, max_bert_len - v.shape[-1]]) for k, v in mention_token.items()
             }
-            return (mention_token, start + 1, end + 1) + entities_zipped + (answer,)
+            return (mention_token, start + 1, end + 1) + (mention_image,) + entities_processed + (entity_image, answer)
 
     @staticmethod
     def extract_mention(tokens: torch.Tensor, start, end) -> Tuple[dict[str, torch.Tensor], int, int]:
@@ -131,10 +152,8 @@ def main():
     trainer = pl.Trainer(
         enable_checkpointing=False, max_epochs=epoch, accelerator="gpu", devices=1, enable_progress_bar=False
     )
-    # trainer.test(model, datasets[2], verbose=True)
     trainer.fit(model, datasets[0], datasets[1])
-    trainer.test(model, datasets[2], verbose=True)
-    set_trace()
+    trainer.test(model, datasets[2])
 
 
 if __name__ == "__main__":

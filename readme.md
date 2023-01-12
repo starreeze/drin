@@ -19,6 +19,8 @@ edit distance
 
 ## 2nd step
 
+lr=1e-3, margin=0.25
+
 ### Just bert, mention name independent
 
 w/o finetune:
@@ -73,6 +75,50 @@ w/o finetune (5 epoch)
 └───────────────────────────┴───────────────────────────┘
 ```
 
+### Bert w/o finetune + Transformer
+
+5 epoch, 8 layers, lr=2e-3, seed=0:
+
+```
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃        Test metric        ┃       DataLoader 0        ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│       top-10_epoch        │    0.9366785883903503     │
+│        top-1_epoch        │    0.5416168570518494     │
+│       top-20_epoch        │    0.9679410457611084     │
+│       top-50_epoch        │    0.9872560501098633     │
+│        top-5_epoch        │    0.8757467269897461     │
+└───────────────────────────┴───────────────────────────┘
+```
+
+20 epoch, 8 layers, seed=1:
+
+```
+top-1: 0.56477  top-5: 0.87039  top-10: 0.93338 top-20: 0.96918 top-50: 0.98844
+```
+
+10 epoches already reached top. No overfitting.
+
+5 epoch, 2 layers, seed=0:
+
+```
+top-1: 0.61688  top-5: 0.89000  top-10: 0.93857 top-20: 0.96788 top-50: 0.98725
+```
+
+20 epoch, 2 layers, seed=1:
+
+```
+top-1: 0.67390  top-5: 0.90754  top-10: 0.94977 top-20: 0.97416 top-50: 0.98901
+```
+
+Still slowly accending (+0.1% every epoch for latest 6 epoches).
+
+### Entity brief + Linear
+
+```
+top-1: 0.07969  top-5: 0.28066  top-10: 0.44008 top-20: 0.63598 top-50: 0.88593
+```
+
 # Explanation for 1st model
 
 1. Why this time much higher?
@@ -89,3 +135,5 @@ w/o finetune (5 epoch)
 
 1. [x] Finetune won't work: as the loss drops also do the metrics. Loss function (BCE) may be problematic.
 2. [x] What will happen if encode the whole mention instead of its name only (with 1. fixed)
+3. [x] Add transformer
+4. [ ] Add image
