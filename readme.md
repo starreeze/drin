@@ -119,6 +119,14 @@ Still slowly accending (+0.1% every epoch for latest 6 epoches).
 top-1: 0.07969  top-5: 0.28066  top-10: 0.44008 top-20: 0.63598 top-50: 0.88593
 ```
 
+### Multimodal cross-attention
+
+mention image, 1 layer, ~10 epoch, valid:
+
+```
+top-1: 0.66433  top-5: 0.90250  top-10: 0.95014 top-20: 0.97655 top-50: 0.99038
+```
+
 # Explanation for 1st model
 
 1. Why this time much higher?
@@ -133,7 +141,7 @@ top-1: 0.07969  top-5: 0.28066  top-10: 0.44008 top-20: 0.63598 top-50: 0.88593
 
 # Problems & future work
 
-1. [x] Finetune won't work: as the loss drops also do the metrics. Loss function (BCE) may be problematic.
-2. [x] What will happen if encode the whole mention instead of its name only (with 1. fixed)
-3. [x] Add transformer
+1. [X] Finetune won't work: as the loss drops also do the metrics. Loss function (BCE) may be problematic.
+2. [X] What will happen if encode the whole mention instead of its name only (with 1. fixed)
+3. [X] Add transformer
 4. [ ] Add image

@@ -27,21 +27,27 @@ class MELDataset(Dataset):
         self.qid2name = qid2name
         self.lookup = lookup
         self.tokenizer = tokenizer
-        self.mention_text = np.load(os.path.join(preprocess_dir, "mention-text-raw_%s.npy" % type))
+        self.mention_text = np.load(os.path.join(text_preprocess_dir, "mention-text-raw_%s.npy" % type))
         if entity_text_type == "name":
-            self.entity_text = np.load(os.path.join(preprocess_dir, "entity-name-raw_%s.npy" % type))
+            self.entity_text = np.load(os.path.join(text_preprocess_dir, "entity-name-raw_%s.npy" % type))
         elif entity_text_type == "brief":
-            self.entity_text = np.load(os.path.join(preprocess_dir, "entity-brief-raw_%s.npy" % type), mmap_mode="r")
+            self.entity_text = np.load(
+                os.path.join(text_preprocess_dir, "entity-brief-raw_%s.npy" % type), mmap_mode="r"
+            )
         else:
             raise ValueError("entity_text_type must be either 'name' or 'brief'")
         self.entity_text = self.entity_text.reshape((-1, num_candidates))
-        self.start_position = np.load(os.path.join(preprocess_dir, "start-pos_%s.npy" % type))
-        self.end_position = np.load(os.path.join(preprocess_dir, "end-pos_%s.npy" % type))
-        self.answer = np.load(os.path.join(preprocess_dir, "answer_%s.npy" % type))
+        self.start_position = np.load(os.path.join(text_preprocess_dir, "start-pos_%s.npy" % type))
+        self.end_position = np.load(os.path.join(text_preprocess_dir, "end-pos_%s.npy" % type))
+        self.answer = np.load(os.path.join(text_preprocess_dir, "answer_%s.npy" % type))
         if mention_final_layer_name == "multimodal":
-            self.mention_image = np.load(os.path.join(preprocess_dir, "mention-image_%s.npy" % type), mmap_mode="r")
+            self.mention_image: np.memmap = np.load(
+                os.path.join(image_preprocess_dir, "mention-image_%s.npy" % type), mmap_mode="r"
+            )
         if entity_final_layer_name == "multimodal":
-            self.entity_image = np.load(os.path.join(preprocess_dir, "entity-image_%s.npy" % type), mmap_mode="r")
+            self.entity_image: np.memmap = np.load(
+                os.path.join(image_preprocess_dir, "entity-image_%s.npy" % type), mmap_mode="r"
+            )
 
     def __len__(self):
         return len(self.mention_text)
@@ -69,8 +75,8 @@ class MELDataset(Dataset):
                 k: torch.constant_pad_nd(v, [0, max_bert_len - v.shape[-1]]) for k, v in entity_token.items()
             }
             entities_processed = (entity_token, 0)
-        mention_image = self.mention_image[idx] if mention_final_layer_name == "multimodal" else 0
-        entity_image = self.entity_image[idx] if entity_final_layer_name == "multimodal" else 0
+        mention_image = self.mention_image[idx].copy() if mention_final_layer_name == "multimodal" else 0
+        entity_image = self.entity_image[idx].copy() if entity_final_layer_name == "multimodal" else 0
         if pre_extract_mention:
             mention_extracted = self.extract_mention(mention_token["input_ids"], start, end)
             return mention_extracted + (mention_image,) + entities_processed + (entity_image, answer)

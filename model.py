@@ -78,9 +78,40 @@ class MultilayerTransformer(nn.Module):
 class MultimodalFusion(nn.Module):
     def __init__(self) -> None:
         super().__init__()
+        self.t2v_attention = nn.MultiheadAttention(
+            bert_embed_dim,
+            transformer_num_heads,
+            transformer_dropout,
+            kdim=resnet_embed_dim,
+            vdim=resnet_embed_dim,
+            batch_first=True,
+        )
+        self.t2v_ffn = nn.Linear(bert_embed_dim, bert_embed_dim)
+        self.v2t_attention = nn.MultiheadAttention(
+            bert_embed_dim,
+            transformer_num_heads,
+            transformer_dropout,
+            batch_first=True,
+        )
+        self.v2t_ffn = nn.Linear(bert_embed_dim, bert_embed_dim)
+        self.layernorms = nn.ModuleList([nn.LayerNorm(bert_embed_dim) for _ in range(4)])
 
     def forward(self, text_seq, text_mask, image_seq, *args):
-        raise NotImplementedError()
+        text_mask = text_mask == 0  # [batch_size, text_seqlen]
+        # [batch_size * num_head, text_seqlen, image_seqlen]
+        # t2v_attention_mask = torch.tile(text_mask.unsqueeze(-1), [transformer_num_heads, 1, resnet_num_region])
+        attended_image = self.t2v_attention(text_seq, image_seq, image_seq, need_weights=False)[0]
+        attended_image = self.layernorms[0](attended_image)
+        attended_image = self.t2v_ffn(attended_image) + attended_image
+        attended_image = self.layernorms[1](attended_image)
+
+        attended_text = self.v2t_attention(
+            attended_image, text_seq, text_seq, key_padding_mask=text_mask, need_weights=False
+        )[0]
+        attended_text = self.layernorms[2](attended_text)
+        attended_text = self.v2t_ffn(attended_text) + attended_text
+        attended_text = self.layernorms[3](attended_text)
+        return attended_text
 
 
 class MentionEncoder(nn.Module):
@@ -105,9 +136,12 @@ class MentionEncoder(nn.Module):
         bs = mention_begin.shape[0]
         # [batch_size, max_bert_len, bert_embed_dim]
         mention_sentence = self.text_encoder(**mention_dict)["last_hidden_state"]  # type: ignore
-        mention_sentence = self.intermidiate_layer(mention_sentence, mention_dict["attention_mask"], mention_image)
-        encoded_mention = torch.zeros([bs, max_token_len, bert_embed_dim], device="cuda")
-        mention_pad_mask = torch.zeros([bs, max_token_len], dtype=torch.bool, device="cuda")
+        # clip text max_len according to max_mention_sentence_len to reduce memory usage
+        mention_sentence = mention_sentence[:, :max_mention_sentence_len, :]
+        attention_mask = mention_dict["attention_mask"][:, :max_mention_sentence_len]
+        mention_sentence = self.intermidiate_layer(mention_sentence, attention_mask, mention_image)
+        encoded_mention = torch.zeros([bs, max_mention_name_len, bert_embed_dim], device="cuda")
+        mention_pad_mask = torch.zeros([bs, max_mention_name_len], dtype=torch.bool, device="cuda")
         for i in range(bs):
             b, e = mention_begin[i], mention_end[i]
             mention_pad_mask[i, : e - b] = 1
