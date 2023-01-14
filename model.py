@@ -33,25 +33,45 @@ def bert_model():
     return model
 
 
-identity_fn = lambda *args: args[0]
+class Identity(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, *args):
+        return args[0]
+
+
+class MaxPool(nn.Module):
+    def __init__(self) -> None:
+        super().__init__()
+
+    def forward(self, seq, *args):
+        return torch.max(seq, dim=1)[0]
 
 
 class Avg(nn.Module):
     def __init__(self) -> None:
         super().__init__()
 
-    def forward(self, seq, mask, *args):
-        return avg_with_mask(seq, mask)
+    def forward(self, seq, begin, end, *args):
+        return self.avg(seq, begin, end)
+
+    @staticmethod
+    def avg(seq, begin, end):
+        bs = seq.shape[0]
+        res = torch.empty(bs, seq.shape[-1])
+        for i in range(bs):
+            res[i] = torch.mean(seq[i, begin[i] : end[i]], dim=0)
+        return res
 
 
 class AvgLinear(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, in_dim, out_dim) -> None:
         super().__init__()
-        self.linear = nn.Linear(bert_embed_dim, linear_output_dim)
+        self.linear = nn.Linear(in_dim, out_dim)
 
-    def forward(self, seq, mask, *args):
-        avgs = avg_with_mask(seq, mask)
-        return self.linear(avgs)
+    def forward(self, seq, begin, end, *args):
+        return self.linear(Avg.avg(seq, begin, end))
 
 
 class MultilayerTransformer(nn.Module):
@@ -75,79 +95,91 @@ class MultilayerTransformer(nn.Module):
         return encoded
 
 
+class CrossAttention(nn.Module):
+    def __init__(self, dim_a, dim_b) -> None:
+        super().__init__()
+        self.a2b_attention = nn.MultiheadAttention(
+            dim_a,
+            transformer_num_heads,
+            transformer_dropout,
+            kdim=dim_b,
+            vdim=dim_b,
+            batch_first=True,
+        )
+        self.a2b_ffn = nn.Linear(dim_a, dim_a)
+        self.b2a_attention = nn.MultiheadAttention(
+            dim_a,
+            transformer_num_heads,
+            transformer_dropout,
+            batch_first=True,
+        )
+        self.b2a_ffn = nn.Linear(dim_a, dim_a)
+        self.layernorms = nn.ModuleList([nn.LayerNorm(dim_a) for _ in range(4)])
+
+    def forward(self, seq_a, mask_a, seq_b, mask_b, *args):
+        mask_a = mask_a == 0  # [batch_size, a_seqlen]
+        mask_b = mask_b == 0
+        attended_b = self.a2b_attention(seq_a, seq_b, seq_b, key_padding_mask=mask_b, need_weights=False)[0]
+        attended_b = self.layernorms[0](attended_b)
+        attended_b = self.a2b_ffn(attended_b) + attended_b
+        attended_b = self.layernorms[1](attended_b)
+        attended_a = self.b2a_attention(attended_b, seq_a, seq_a, key_padding_mask=mask_a, need_weights=False)[0]
+        attended_a = self.layernorms[2](attended_a)
+        attended_a = self.b2a_ffn(attended_a) + attended_a
+        attended_a = self.layernorms[3](attended_a)
+        return attended_a
+
+
 class MultimodalFusion(nn.Module):
     def __init__(self) -> None:
         super().__init__()
-        self.t2v_attention = nn.MultiheadAttention(
-            bert_embed_dim,
-            transformer_num_heads,
-            transformer_dropout,
-            kdim=resnet_embed_dim,
-            vdim=resnet_embed_dim,
-            batch_first=True,
-        )
-        self.t2v_ffn = nn.Linear(bert_embed_dim, bert_embed_dim)
-        self.v2t_attention = nn.MultiheadAttention(
-            bert_embed_dim,
-            transformer_num_heads,
-            transformer_dropout,
-            batch_first=True,
-        )
-        self.v2t_ffn = nn.Linear(bert_embed_dim, bert_embed_dim)
-        self.layernorms = nn.ModuleList([nn.LayerNorm(bert_embed_dim) for _ in range(4)])
+        self.t2v_attention = CrossAttention(bert_embed_dim, resnet_embed_dim)
+        self.v2t_attention = CrossAttention(resnet_embed_dim, bert_embed_dim)
+        self.text_linear = nn.Linear(bert_embed_dim, mention_final_output_dim)
+        self.image_linear = nn.Linear(resnet_embed_dim, mention_final_output_dim)
+        self.subspace_activation = getattr(nn.functional, multimodal_subspace_activation)
+        self.score_linear = nn.Linear(mention_final_output_dim * 2, 2)
 
     def forward(self, text_seq, text_mask, image_seq, *args):
-        text_mask = text_mask == 0  # [batch_size, text_seqlen]
-        # [batch_size * num_head, text_seqlen, image_seqlen]
-        # t2v_attention_mask = torch.tile(text_mask.unsqueeze(-1), [transformer_num_heads, 1, resnet_num_region])
-        attended_image = self.t2v_attention(text_seq, image_seq, image_seq, need_weights=False)[0]
-        attended_image = self.layernorms[0](attended_image)
-        attended_image = self.t2v_ffn(attended_image) + attended_image
-        attended_image = self.layernorms[1](attended_image)
-
-        attended_text = self.v2t_attention(
-            attended_image, text_seq, text_seq, key_padding_mask=text_mask, need_weights=False
-        )[0]
-        attended_text = self.layernorms[2](attended_text)
-        attended_text = self.v2t_ffn(attended_text) + attended_text
-        attended_text = self.layernorms[3](attended_text)
-        return attended_text
+        image_mask = torch.ones(image_seq.shape[:2], dtype=torch.bool, device="cuda")
+        attended_text = torch.max(self.t2v_attention(text_seq, text_mask, image_seq, image_mask), dim=1)[0]
+        attended_text = self.subspace_activation(self.text_linear(attended_text))
+        attended_image = torch.max(self.v2t_attention(image_seq, image_mask, text_seq, text_mask), dim=1)[0]
+        attended_image = self.subspace_activation(self.image_linear(attended_image))
+        score = nn.functional.softmax(self.score_linear(torch.cat([attended_text, attended_image], dim=1)))
+        # [batch_size, 1, 2] @ [batch_size, 2, output_dim]
+        return torch.matmul(score.unsqueeze(1), torch.stack([attended_text, attended_image], dim=1)).squeeze(1)
 
 
 class MentionEncoder(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.text_encoder = bert_model()
-        # for mentions, we feed token representations and padding mask into final encoder
+        # intermediate layer: further encode text feature & do multimodal fusion
+        # final layer: extract final mention representations according to its position
+        if mention_final_representation == "max pool":
+            self.final_layer = MaxPool()
+        elif mention_final_representation == "avg extract":
+            self.final_layer = Avg()
         if mention_final_layer_name == "linear":
-            self.intermidiate_layer = identity_fn
-            self.final_layer = AvgLinear()
+            self.intermediate_layer = Identity()
+            self.final_layer = AvgLinear(bert_embed_dim, mention_final_output_dim)
         elif mention_final_layer_name == "transformer":
-            self.intermidiate_layer = MultilayerTransformer()
-            self.final_layer = Avg()
+            self.intermediate_layer = MultilayerTransformer()
         elif mention_final_layer_name == "multimodal":
-            self.intermidiate_layer = MultimodalFusion()
-            self.final_layer = Avg()
+            self.intermediate_layer = MultimodalFusion()
+            self.final_layer = Identity()
         elif mention_final_layer_name == "none":
-            self.intermidiate_layer = identity_fn
-            self.final_layer = Avg()
+            self.intermediate_layer = Identity()
 
     def forward(self, mention_dict, mention_begin, mention_end, mention_image):
-        bs = mention_begin.shape[0]
         # [batch_size, max_bert_len, bert_embed_dim]
         mention_sentence = self.text_encoder(**mention_dict)["last_hidden_state"]  # type: ignore
         # clip text max_len according to max_mention_sentence_len to reduce memory usage
         mention_sentence = mention_sentence[:, :max_mention_sentence_len, :]
         attention_mask = mention_dict["attention_mask"][:, :max_mention_sentence_len]
-        mention_sentence = self.intermidiate_layer(mention_sentence, attention_mask, mention_image)
-        encoded_mention = torch.zeros([bs, max_mention_name_len, bert_embed_dim], device="cuda")
-        mention_pad_mask = torch.zeros([bs, max_mention_name_len], dtype=torch.bool, device="cuda")
-        for i in range(bs):
-            b, e = mention_begin[i], mention_end[i]
-            mention_pad_mask[i, : e - b] = 1
-            encoded_mention[i, : e - b, :] = mention_sentence[i, b:e]
-        # [batch_size, max_token_len, bert_embed_dim] -> [batch_size, encoder_output_dim]
-        encoded_mention = self.final_layer(encoded_mention, mention_pad_mask)
+        mention_feature = self.intermediate_layer(mention_sentence, attention_mask, mention_image)
+        encoded_mention = self.final_layer(mention_feature, mention_begin, mention_end)
         return encoded_mention
 
 
@@ -155,9 +187,8 @@ class EntityEncoder(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.text_encoder = bert_model()
-        # for entities, we 'hardly' calculate mean on their tokens to obtain a vector, and then feed this into encoder
         if entity_final_layer_name == "linear":
-            self.final_layer = nn.Linear(bert_embed_dim, linear_output_dim)
+            self.final_layer = nn.Linear(bert_embed_dim, entity_final_output_dim)
         elif entity_final_layer_name == "none":
             self.final_layer = nn.Identity()
 
@@ -191,9 +222,6 @@ class EntityEncoder(nn.Module):
             for i in range(num_candidates):
                 entity_i = {k: v[:, i, :] for k, v in entity_dict.items()}
                 encoded_entity[:, i, :] = self.text_encoder(**entity_i)["pooler_output"]  # type: ignore
-            # entity_dict = {k: v.reshape((bs * num_candidates, max_bert_len)) for k, v in entity_dict.items()}
-            # encoded_entity = self.entity_base_encoder(**entity_dict)["pooler_output"]  # type: ignore
-            # encoded_entity = encoded_entity.reshape([bs, num_candidates, bert_embed_dim])
         encoded_entity = self.final_layer(encoded_entity)  # TODO: image
         return encoded_entity
 
@@ -212,9 +240,9 @@ class MainModel(pl.LightningModule):
     def forward(self, batch):
         """
         mention_dict: dict of [batch_size, max_bert_len]
-        mention_begin/end: begin/end pos of mention name tokens insentence (including CLS) [batch_size]
+        mention_begin/end: begin/end pos of mention name tokens in sentence (including CLS) [batch_size]
         entity_dict: dict of [batch_size, num_entity_sentence, max_bert_len]
-        entity_token_sep_idx: index of all SEP tokens [batch_size, num_entity_sentence, num_entity_pre_sentense]
+        entity_token_sep_idx: index of all SEP tokens [batch_size, num_entity_sentence, num_entity_pre_sentence]
         """
         mention_dict, mention_begin, mention_end, mention_image, entity_dict, entity_token_sep_idx, entity_image = batch
         encoded_mention = self.mention_encoder(mention_dict, mention_begin, mention_end, mention_image)
@@ -223,7 +251,7 @@ class MainModel(pl.LightningModule):
         return self.similarity_function(encoded_mention, encoded_entity)
 
     def _forward_step(self, batch, batch_idx):
-        log_str = f"{batch_idx}\t"
+        log_str = f" {batch_idx}\t"
         y = batch[-1]
         y_hat = self(batch[:-1])
         loss = self.loss(y, y_hat)
@@ -232,7 +260,7 @@ class MainModel(pl.LightningModule):
             metric.update(y_hat, y)  # type: ignore
             log_str += f"top-{k}: {float(metric.compute()):.5f}\t"  # type: ignore
         if batch_idx % stdout_freq == 0:
-            print(log_str)
+            print(log_str, end="\r")
         return loss
 
     def training_step(self, batch, batch_idx):

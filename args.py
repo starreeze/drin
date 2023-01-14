@@ -2,27 +2,33 @@
 # @Date    : 2023-01-04 10:01:03
 # @Author  : Shangyu.Xing (starreeze@foxmail.com)
 
-# bert
+# base encoders
+## bert
 max_bert_len = 512
 bert_embed_dim = 768
 CLS = 101
 SEP = 102
-# resnet
+## resnet
 resnet_embed_dim = 2048
 resnet_num_region = 49
 
 # model
+## basic
 finetune_bert = False
 pre_extract_mention = False  # if True, extract mention names into independent sentences before bert
-mention_final_layer_name = "multimodal"
+mention_final_layer_name = "multimodal"  # linear will force the next option to 'extract avg'
+mention_final_representation = "max pool"  # 'max pool' or 'avg extract'
+mention_final_output_dim = 768
 entity_final_layer_name = "linear"
 entity_text_type = "name"  # name, brief
-linear_output_dim = 768
+entity_final_output_dim = 768
+## args for different layers
 transformer_num_layers = 8
 transformer_num_heads = 8
 transformer_ffn_hidden_size = 512
 transformer_ffn_activation = "gelu"
 transformer_dropout = 0.1
+multimodal_subspace_activation = "gelu"
 
 # other data
 num_entity_sentence = 3  # if 0, disable zipping: every entity is a sentence

@@ -151,12 +151,29 @@ def create_datasets():
     ]
 
 
+class EpochCallback(pl.Callback):
+    def on_train_epoch_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        status_str = f"\n\n========== Epoch {trainer.current_epoch + 1}/{trainer.max_epochs}"
+        status_str += f" - training with {trainer.num_training_batches} steps =========="
+        print(status_str)
+
+    def on_validation_epoch_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        status_str = f"\n\n========== Epoch {trainer.current_epoch + 1}/{trainer.max_epochs}"
+        status_str += f" - validating with {trainer.num_val_batches} steps =========="
+        print(status_str)
+
+
 def main():
     pl.seed_everything(seed)
     datasets = create_datasets()
     model = MainModel()
     trainer = pl.Trainer(
-        enable_checkpointing=False, max_epochs=epoch, accelerator="gpu", devices=1, enable_progress_bar=False
+        enable_checkpointing=False,
+        max_epochs=epoch,
+        accelerator="gpu",
+        devices=1,
+        enable_progress_bar=False,
+        callbacks=EpochCallback(),
     )
     trainer.fit(model, datasets[0], datasets[1])
     trainer.test(model, datasets[2])

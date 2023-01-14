@@ -1,7 +1,27 @@
 {
-    "workbench.colorCustomizations": {
-        "activityBar.background": "#342C29",
-        "titleBar.activeBackground": "#493D39",
-        "titleBar.activeForeground": "#FBFAF9"
-    }
+  "workbench.colorCustomizations": {
+    "activityBar.background": "#342C29",
+    "titleBar.activeBackground": "#493D39",
+    "titleBar.activeForeground": "#FBFAF9"
+  },
+  "cSpell.words": [
+    "cuda",
+    "dtype",
+    "finetune",
+    "kdim",
+    "layernorms",
+    "lowerbound",
+    "Multihead",
+    "optim",
+    "pooler",
+    "pretrained",
+    "resnet",
+    "seqlen",
+    "Shangyu",
+    "topk",
+    "Topk",
+    "torchmetrics",
+    "unsqueeze",
+    "vdim"
+  ]
 }
