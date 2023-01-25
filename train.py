@@ -3,17 +3,8 @@
 # @Author  : Shangyu.Xing (starreeze@foxmail.com)
 
 from __future__ import annotations
-import sys, json
-from pathlib import Path
-from typing import Tuple
-
-directory = Path(__file__)
-sys.path.append(str(directory.parent.parent.parent))
-sys.path.append(str(directory.parent.parent))
-sys.path.append(str(directory.parent))
-sys.path.append(str(directory))
 from args import *
-import torch, os
+import torch, os, json
 from torch.utils.data import DataLoader, Dataset
 from transformers import BertTokenizer
 import numpy as np
@@ -22,20 +13,21 @@ from model import MainModel
 
 
 class MELDataset(Dataset):
-    def __init__(self, type, qid2name, lookup, tokenizer) -> None:
+    def __init__(self, type, lookup, tokenizer, *, qid2name=None, qid2attr=None) -> None:
         super().__init__()
-        self.qid2name = qid2name
+        self.qid2name: dict[str, str] = qid2name  # type: ignore
+        self.qid2attr: dict[str, str] = qid2attr  # type: ignore
         self.lookup = lookup
         self.tokenizer = tokenizer
         self.mention_text = np.load(os.path.join(text_preprocess_dir, "mention-text-raw_%s.npy" % type))
-        if entity_text_type == "name":
+        if entity_text_type == "name" or entity_text_type == "attr":
             self.entity_text = np.load(os.path.join(text_preprocess_dir, "entity-name-raw_%s.npy" % type))
         elif entity_text_type == "brief":
             self.entity_text = np.load(
                 os.path.join(text_preprocess_dir, "entity-brief-raw_%s.npy" % type), mmap_mode="r"
             )
         else:
-            raise ValueError("entity_text_type must be either 'name' or 'brief'")
+            raise ValueError("entity_text_type must be either 'name', 'brief' or 'attr'")
         self.entity_text = self.entity_text.reshape((-1, num_candidates))
         self.start_position = np.load(os.path.join(text_preprocess_dir, "start-pos_%s.npy" % type))
         self.end_position = np.load(os.path.join(text_preprocess_dir, "end-pos_%s.npy" % type))
@@ -59,18 +51,21 @@ class MELDataset(Dataset):
             entity_text = list(map(self.qid2name.get, self.entity_text[idx]))
         elif entity_text_type == "brief":
             entity_text = list(self.entity_text[idx])
-        else:
-            raise ValueError("entity_text_type must be either 'name' or 'brief'")
+        elif entity_text_type == "attr":
+            entity_text = [
+                (self.qid2name[qid] + ". " + self.qid2attr[qid].replace(".", ";"))[:max_entity_attr_len]
+                for qid in self.entity_text[idx]
+            ]
         mention_token: dict[str, torch.Tensor] = self.tokenizer(
             mention_text, return_tensors="pt", padding=True, truncation=True
         )
         mention_token = {k: v.squeeze(0) for k, v in mention_token.items()}
         answer = self.lookup[self.answer[idx]]
         if num_entity_sentence:
-            entity_token = self.tokenizer(entity_text)
+            entity_token = self.tokenizer(entity_text)  # type: ignore
             entities_processed = self.zip_entities(entity_token["input_ids"])
         else:
-            entity_token = self.tokenizer(entity_text, return_tensors="pt", padding=True, truncation=True)
+            entity_token = self.tokenizer(entity_text, return_tensors="pt", padding=True, truncation=True)  # type: ignore
             entity_token = {
                 k: torch.constant_pad_nd(v, [0, max_bert_len - v.shape[-1]]) for k, v in entity_token.items()
             }
@@ -87,7 +82,7 @@ class MELDataset(Dataset):
             return (mention_token, start + 1, end + 1) + (mention_image,) + entities_processed + (entity_image, answer)
 
     @staticmethod
-    def extract_mention(tokens: torch.Tensor, start, end) -> Tuple[dict[str, torch.Tensor], int, int]:
+    def extract_mention(tokens: torch.Tensor, start, end) -> tuple[dict[str, torch.Tensor], int, int]:
         """
         extract mention name tokens into a new sentence and return with start/end pos
         start/end_pos: CLS considered (not included in range) but not SEP
@@ -107,7 +102,7 @@ class MELDataset(Dataset):
         return result_dict, 1, end - start + 1
 
     @staticmethod
-    def zip_entities(tokens: list[list[int]]) -> Tuple[dict[str, torch.Tensor], torch.Tensor]:
+    def zip_entities(tokens: list[list[int]]) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
         """zip all entities into a few sentences for quicker inference on bert"""
         # batch tokens with batch_size = num_entity_sentence
         total = len(tokens)
@@ -138,16 +133,38 @@ class MELDataset(Dataset):
 
 
 def create_datasets():
-    with open(qid2entity_answer_path, "r") as f:
-        qid2name: dict[str, str] = json.load(f)
+    qid2name, qid2attr = None, None
+    if entity_text_type == "name":
+        with open(qid2entity_answer_path, "r") as f:
+            qid2name = json.load(f)
+    elif entity_text_type == "attr":
+        with open(qid2entity_answer_path, "r") as f:
+            qid2name = json.load(f)
+        with open(qid2attr_path, "r") as f:
+            qid2attr = json.load(f)
     lookup = torch.eye(num_candidates - 1, dtype=torch.int8)
     all_zero_line = torch.zeros((1, num_candidates - 1), dtype=torch.int8)
     lookup = torch.concatenate([lookup, all_zero_line], dim=0)
     tokenizer = BertTokenizer.from_pretrained("bert-base-cased")
     return [
-        DataLoader(MELDataset("train", qid2name, lookup, tokenizer), batch_size, True, num_workers=dataloader_workers),
-        DataLoader(MELDataset("valid", qid2name, lookup, tokenizer), batch_size, False, num_workers=dataloader_workers),
-        DataLoader(MELDataset("test", qid2name, lookup, tokenizer), batch_size, False, num_workers=dataloader_workers),
+        DataLoader(
+            MELDataset("train", lookup, tokenizer, qid2name=qid2name, qid2attr=qid2attr),
+            batch_size,
+            True,
+            num_workers=dataloader_workers,
+        ),
+        DataLoader(
+            MELDataset("valid", lookup, tokenizer, qid2name=qid2name, qid2attr=qid2attr),
+            batch_size,
+            False,
+            num_workers=dataloader_workers,
+        ),
+        DataLoader(
+            MELDataset("test", lookup, tokenizer, qid2name=qid2name, qid2attr=qid2attr),
+            batch_size,
+            False,
+            num_workers=dataloader_workers,
+        ),
     ]
 
 
@@ -157,10 +174,16 @@ class EpochCallback(pl.Callback):
         status_str += f" - training with {trainer.num_training_batches} steps =========="
         print(status_str)
 
+    def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        print("")
+
     def on_validation_epoch_start(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
         status_str = f"\n\n========== Epoch {trainer.current_epoch + 1}/{trainer.max_epochs}"
         status_str += f" - validating with {trainer.num_val_batches} steps =========="
         print(status_str)
+
+    def on_validation_epoch_end(self, trainer: pl.Trainer, pl_module: pl.LightningModule) -> None:
+        print("")
 
 
 def main():

@@ -3,26 +3,12 @@
 # @Author  : Shangyu.Xing (starreeze@foxmail.com)
 
 from __future__ import annotations
-import sys
-from pathlib import Path
-
-directory = Path(__file__)
-sys.path.append(str(directory.parent.parent.parent))
-sys.path.append(str(directory.parent.parent))
-sys.path.append(str(directory.parent))
-sys.path.append(str(directory))
 import torch
-from torch import nn, Tensor
-from transformers import BertModel, BertTokenizer
+from torch import nn
+from transformers import BertModel
 import lightning as pl
 from args import *
 from loss_metric import *
-
-
-def avg_with_mask(seq, mask):
-    mask_expanded = torch.tile(mask.unsqueeze(-1), [1, 1, bert_embed_dim])
-    num_valid_tokens = torch.tile(torch.sum(mask, dim=1).unsqueeze(-1), [1, bert_embed_dim])
-    return torch.sum(seq * mask_expanded, dim=1) / num_valid_tokens
 
 
 def bert_model():
@@ -42,11 +28,21 @@ class Identity(nn.Module):
 
 
 class MaxPool(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, dim=1) -> None:
         super().__init__()
+        self.dim = dim
 
     def forward(self, seq, *args):
-        return torch.max(seq, dim=1)[0]
+        return torch.max(seq, dim=self.dim)[0]
+
+
+class AvgPool(nn.Module):
+    def __init__(self, dim=1) -> None:
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, seq, *args):
+        return torch.mean(seq, dim=self.dim)
 
 
 class Avg(nn.Module):
@@ -59,7 +55,7 @@ class Avg(nn.Module):
     @staticmethod
     def avg(seq, begin, end):
         bs = seq.shape[0]
-        res = torch.empty(bs, seq.shape[-1])
+        res = torch.empty(bs, seq.shape[-1], device="cuda")
         for i in range(bs):
             res[i] = torch.mean(seq[i, begin[i] : end[i]], dim=0)
         return res
@@ -116,9 +112,12 @@ class CrossAttention(nn.Module):
         self.b2a_ffn = nn.Linear(dim_a, dim_a)
         self.layernorms = nn.ModuleList([nn.LayerNorm(dim_a) for _ in range(4)])
 
-    def forward(self, seq_a, mask_a, seq_b, mask_b, *args):
+    def forward(self, seq_a, mask_a, seq_b, mask_b=None, *args):
         mask_a = mask_a == 0  # [batch_size, a_seqlen]
-        mask_b = mask_b == 0
+        if mask_b is not None:
+            mask_b = mask_b == 0
+        else:
+            mask_b = torch.zeros(seq_b.shape[:2], dtype=torch.bool, device="cuda")
         attended_b = self.a2b_attention(seq_a, seq_b, seq_b, key_padding_mask=mask_b, need_weights=False)[0]
         attended_b = self.layernorms[0](attended_b)
         attended_b = self.a2b_ffn(attended_b) + attended_b
@@ -167,8 +166,11 @@ class MentionEncoder(nn.Module):
         elif mention_final_layer_name == "transformer":
             self.intermediate_layer = MultilayerTransformer()
         elif mention_final_layer_name == "multimodal":
-            self.intermediate_layer = MultimodalFusion()
-            self.final_layer = Identity()
+            if mention_multimodal_attention == "bi":
+                self.intermediate_layer = MultimodalFusion()
+                self.final_layer = Identity()
+            elif mention_multimodal_attention == "text":
+                self.intermediate_layer = CrossAttention(bert_embed_dim, resnet_embed_dim)
         elif mention_final_layer_name == "none":
             self.intermediate_layer = Identity()
 
@@ -191,50 +193,51 @@ class EntityEncoder(nn.Module):
             self.final_layer = nn.Linear(bert_embed_dim, entity_final_output_dim)
         elif entity_final_layer_name == "none":
             self.final_layer = nn.Identity()
+        if entity_final_pooling == "max":
+            self.final_pooling = MaxPool(dim=0)
+        elif entity_final_pooling == "avg":
+            self.final_pooling = AvgPool(dim=0)
 
     def forward(self, entity_dict, entity_token_sep_idx, entity_image):
         bs = entity_token_sep_idx.shape[0]
         encoded_entity = torch.empty([bs, num_candidates, bert_embed_dim], device="cuda")
-        if entity_text_type == "name":
-            if num_entity_sentence:
-                entity_dict = {k: v.reshape((bs * num_entity_sentence, max_bert_len)) for k, v in entity_dict.items()}
-                zipped_entity = self.text_encoder(**entity_dict)["last_hidden_state"]  # type: ignore
-                zipped_entity = zipped_entity.reshape([bs, num_entity_sentence, max_bert_len, bert_embed_dim])
-                num_entity_per_sentence = entity_token_sep_idx.shape[-1]
-                for i in range(bs):
-                    for j in range(num_entity_sentence):
-                        last_idx = 1
-                        for k in range(num_entity_per_sentence):
-                            entity_idx = k + j * num_entity_per_sentence
-                            current_idx = entity_token_sep_idx[i, j, k]
-                            if entity_idx < num_candidates:
-                                entity_feature = torch.mean(zipped_entity[i, j, last_idx:current_idx, :], dim=0)
-                                encoded_entity[i, entity_idx, :] = entity_feature
-                            last_idx = current_idx + 1
-            else:
-                for i in range(num_candidates):
-                    entity_i = {k: v[:, i, :] for k, v in entity_dict.items()}
-                    seq = self.text_encoder(**entity_i)["last_hidden_state"]  # type: ignore
-                    for j in range(bs):
-                        num_tokens = torch.sum(entity_i["attention_mask"], dim=-1)
-                        encoded_entity[j, i, :] = torch.mean(seq[j, 1 : num_tokens[j] - 1, :], dim=0)
+        if num_entity_sentence:
+            # entity_dict = {k: v.reshape((bs * num_entity_sentence, max_bert_len)) for k, v in entity_dict.items()}
+            # zipped_entity = self.text_encoder(**entity_dict)["last_hidden_state"]  # type: ignore
+            # zipped_entity = zipped_entity.reshape([bs, num_entity_sentence, max_bert_len, bert_embed_dim])
+            zipped_entity = torch.empty([bs, num_entity_sentence, max_bert_len, bert_embed_dim])
+            for i in range(num_entity_sentence):
+                entity_dict_i = {k: v[:, i, :] for k, v in entity_dict.items()}
+                zipped_entity[:, i, :, :] = self.text_encoder(**entity_dict_i)["last_hidden_state"]  # type: ignore
+            num_entity_per_sentence = entity_token_sep_idx.shape[-1]
+            for i in range(bs):
+                for j in range(num_entity_sentence):
+                    last_idx = 1
+                    for k in range(num_entity_per_sentence):
+                        entity_idx = k + j * num_entity_per_sentence
+                        current_idx = entity_token_sep_idx[i, j, k]
+                        if entity_idx < num_candidates:
+                            entity_feature = self.final_pooling(zipped_entity[i, j, last_idx:current_idx, :])
+                            encoded_entity[i, entity_idx, :] = entity_feature
+                        last_idx = current_idx + 1
         else:
             for i in range(num_candidates):
                 entity_i = {k: v[:, i, :] for k, v in entity_dict.items()}
-                encoded_entity[:, i, :] = self.text_encoder(**entity_i)["pooler_output"]  # type: ignore
+                seq = self.text_encoder(**entity_i)["last_hidden_state"]  # type: ignore
+                for j in range(bs):
+                    num_tokens = torch.sum(entity_i["attention_mask"], dim=-1)
+                    encoded_entity[j, i, :] = self.final_pooling(seq[j, 1 : num_tokens[j] - 1, :])
         encoded_entity = self.final_layer(encoded_entity)  # TODO: image
         return encoded_entity
 
 
 class MainModel(pl.LightningModule):
-    metrics_topk = [1, 5, 10, 20, 50]
-
     def __init__(self) -> None:
         super().__init__()
         self.mention_encoder = MentionEncoder()
         self.entity_encoder = EntityEncoder()
         self.similarity_function = nn.CosineSimilarity(dim=-1)
-        self.metrics = nn.ModuleList([TopkAccuracy(k) for k in self.metrics_topk])
+        self.metrics = nn.ModuleList([TopkAccuracy(k) for k in metrics_topk])
         self.loss = TripletLoss(triplet_margin)
 
     def forward(self, batch):
@@ -256,11 +259,10 @@ class MainModel(pl.LightningModule):
         y_hat = self(batch[:-1])
         loss = self.loss(y, y_hat)
         log_str += f"loss: {float(loss):.5f}\t"
-        for k, metric in zip(self.metrics_topk, self.metrics):
+        for k, metric in zip(metrics_topk, self.metrics):
             metric.update(y_hat, y)  # type: ignore
             log_str += f"top-{k}: {float(metric.compute()):.5f}\t"  # type: ignore
-        if batch_idx % stdout_freq == 0:
-            print(log_str, end="\r")
+        print(log_str, end="\r")
         return loss
 
     def training_step(self, batch, batch_idx):

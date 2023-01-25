@@ -121,7 +121,7 @@ top-1: 0.07969  top-5: 0.28066  top-10: 0.44008 top-20: 0.63598 top-50: 0.88593
 
 ### Multimodal cross-attention
 
-mention image, 1 layer, ~10 epoch, valid:
+mention image, 0.5 layer, ~10 epoch, valid:
 
 ```
 top-1: 0.66433  top-5: 0.90250  top-10: 0.95014 top-20: 0.97655 top-50: 0.99038
@@ -133,6 +133,44 @@ whole sentence as mention representation:
 top-1: 0.67250  top-5: 0.90795  top-10: 0.95248 top-20: 0.97754 top-50: 0.99020
 ```
 
+with structure same with the paper, 1 layer, 7 epoch, valid:
+
+```
+top-1: 0.63189  top-5: 0.89008  top-10: 0.94184 top-20: 0.97187 top-50: 0.98937
+```
+
+with superparams same with paper, 1 layer, 7 epoch, valid:
+
+```
+top-1: 0.60776  top-5: 0.88499  top-10: 0.93379 top-20: 0.96354 top-50: 0.98763
+```
+
+### Cross-attention + entity attr
+
+attr_max_len=200, 20 epoch:
+
+```
+top-1: 0.34367  top-5: 0.72118  top-10: 0.85314 top-20: 0.93579 top-50: 0.98265
+```
+
+attr_max_len=128, lr=1.5e-3, margin=0.3, 19 epoch:
+
+```
+top-1: 0.38423  top-5: 0.76536  top-10: 0.88104 top-20: 0.94454 top-50: 0.98382
+```
+
+mention half cross & extract name, 20 epoch:
+
+```
+top-1: 0.38720  top-5: 0.76788  top-10: 0.88239 top-20: 0.94535 top-50: 0.98405
+```
+
+lr=1e-3, margin=0.4, 40 epoch:
+
+```
+top-1: 0.40837  top-5: 0.78711  top-10: 0.89227 top-20: 0.95087 top-50: 0.98562
+```
+
 # Explanation for 1st model
 
 1. Why this time much higher?
@@ -142,8 +180,6 @@ top-1: 0.67250  top-5: 0.90795  top-10: 0.95248 top-20: 0.97754 top-50: 0.99020
 2. Why lower than step 1 result?
    Actually the model is not fully symmetric: we cancatenate entities into 1 sentence separated with SEP.
    This kind of output for entities diverge slightly from an independent sentence:
-
-![](/home/xsy/snap/marktext/9/.config/marktext/images/2023-01-08-16-37-05-image.png)
 
 # Problems & future work
 
