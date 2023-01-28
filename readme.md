@@ -171,6 +171,18 @@ lr=1e-3, margin=0.4, 40 epoch:
 top-1: 0.40837  top-5: 0.78711  top-10: 0.89227 top-20: 0.95087 top-50: 0.98562
 ```
 
+100 epoch:
+
+```
+
+```
+
+margin=0.5, metion full cross & sentence maxpool, 100 epoch:
+
+```
+
+```
+
 # Explanation for 1st model
 
 1. Why this time much higher?
@@ -183,7 +195,7 @@ top-1: 0.40837  top-5: 0.78711  top-10: 0.89227 top-20: 0.95087 top-50: 0.98562
 
 # Problems & future work
 
-1. [x] Finetune won't work: as the loss drops also do the metrics. Loss function (BCE) may be problematic.
-2. [x] What will happen if encode the whole mention instead of its name only (with 1. fixed)
-3. [x] Add transformer
+1. [X] Finetune won't work: as the loss drops also do the metrics. Loss function (BCE) may be problematic.
+2. [X] What will happen if encode the whole mention instead of its name only (with 1. fixed)
+3. [X] Add transformer
 4. [ ] Add image

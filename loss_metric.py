@@ -64,6 +64,10 @@ class TopkAccuracy(Metric):
     def compute(self):
         return self.correct / self.total  # type: ignore
 
+    def reset(self):
+        self.correct = torch.tensor(0)
+        self.total = torch.tensor(0)
+
 
 def main():
     pass
