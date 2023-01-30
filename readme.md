@@ -147,40 +147,16 @@ top-1: 0.60776  top-5: 0.88499  top-10: 0.93379 top-20: 0.96354 top-50: 0.98763
 
 ### Cross-attention + entity attr
 
-attr_max_len=200, 20 epoch:
+mention half cross & extract name, lr=1e-3, margin=0.4, 30 epoch:
 
 ```
-top-1: 0.34367  top-5: 0.72118  top-10: 0.85314 top-20: 0.93579 top-50: 0.98265
+top-1: 0.52449  top-5: 0.84687  top-10: 0.92254 top-20: 0.96018 top-50: 0.98726
 ```
 
-attr_max_len=128, lr=1.5e-3, margin=0.3, 19 epoch:
+margin=0.5, metion full cross & sentence maxpool, 30 epoch:
 
 ```
-top-1: 0.38423  top-5: 0.76536  top-10: 0.88104 top-20: 0.94454 top-50: 0.98382
-```
-
-mention half cross & extract name, 20 epoch:
-
-```
-top-1: 0.38720  top-5: 0.76788  top-10: 0.88239 top-20: 0.94535 top-50: 0.98405
-```
-
-lr=1e-3, margin=0.4, 40 epoch:
-
-```
-top-1: 0.40837  top-5: 0.78711  top-10: 0.89227 top-20: 0.95087 top-50: 0.98562
-```
-
-100 epoch:
-
-```
-
-```
-
-margin=0.5, metion full cross & sentence maxpool, 100 epoch:
-
-```
-
+top-1: 0.50976  top-5: 0.82855  top-10: 0.90661 top-20: 0.95599 top-50: 0.98566
 ```
 
 # Explanation for 1st model

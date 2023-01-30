@@ -18,7 +18,7 @@ qid2attr_path = "/home/data_91_c/xsy/mel-dataset/wikimel/entities/qid2abs.json"
 qid2name_path = "/home/data_91_c/xsy/mel-dataset/wikimel/candidates/qid2ne.json"
 text_preprocess_dir = "/home/data_91_c/xsy/mel-dataset/text_preprocessed"
 output_dir = "/data0/xsy/mel"
-process_mention = False
+process_mention = True
 process_entity_attr = True
 
 

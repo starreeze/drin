@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 # @Date    : 2023-01-03 10:57:44
 # @Author  : Shangyu.Xing (starreeze@foxmail.com)
+"""implementation of the baseline model (https://github.com/seukgcode/MEL-GHMFC)"""
 
 from __future__ import annotations
 import torch
 from torch import nn
 from transformers import BertModel
-from args import *
+from common.args import *
 
 
 def bert_model():
@@ -243,7 +244,7 @@ class EntityEncoder(nn.Module):
         return encoded_entity
 
 
-class BaseLine(nn.Module):
+class Model(nn.Module):
     def __init__(self) -> None:
         super().__init__()
         self.mention_encoder = MentionEncoder()
