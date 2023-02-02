@@ -23,6 +23,8 @@
     "Topk",
     "torchmetrics",
     "unsqueeze",
-    "vdim"
-  ]
+    "vdim",
+    "wikimel"
+  ],
+  "python.analysis.typeCheckingMode": "basic"
 }

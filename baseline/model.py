@@ -150,16 +150,16 @@ class MultimodalFusion(nn.Module):
 
 
 class MentionEncoder(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, inline_bert=None) -> None:
         super().__init__()
-        if online_bert:
+        if inline_bert is None:
+            inline_bert = online_bert
+        self.inline_bert = inline_bert
+        if inline_bert:
             self.text_encoder = bert_model()
         # intermediate layer: further encode text feature & do multimodal fusion
         # final layer: extract final mention representations according to its position
-        if mention_final_representation == "max pool":
-            self.final_layer = MaxPool()
-        elif mention_final_representation == "avg extract":
-            self.final_layer = Avg()
+        self.final_layer = self.get_mention_final_repr_fn()
         if mention_final_layer_name == "linear":
             self.intermediate_layer = Identity()
             self.final_layer = AvgLinear(bert_embed_dim, mention_final_output_dim)
@@ -175,7 +175,7 @@ class MentionEncoder(nn.Module):
             self.intermediate_layer = Identity()
 
     def forward(self, batch):
-        if online_bert:
+        if self.inline_bert:
             mention_dict, mention_begin, mention_end, mention_image = batch
             # [batch_size, max_bert_len, bert_embed_dim]
             mention_sentence = self.text_encoder(**mention_dict)["last_hidden_state"]  # type: ignore
@@ -189,59 +189,88 @@ class MentionEncoder(nn.Module):
         encoded_mention = self.final_layer(mention_feature, mention_begin, mention_end)
         return encoded_mention
 
+    @staticmethod
+    def get_mention_final_repr_fn():
+        if mention_final_representation == "max pool":
+            return MaxPool()
+        elif mention_final_representation == "avg extract":
+            return Avg()
+        else:
+            raise ValueError()
+
 
 class EntityEncoder(nn.Module):
-    def __init__(self) -> None:
+    def __init__(self, inline_bert=None) -> None:
         super().__init__()
-        if online_bert:
+        if inline_bert is None:
+            inline_bert = online_bert
+        self.inline_bert = inline_bert
+        if inline_bert:
             self.text_encoder = bert_model()
         if entity_final_layer_name == "linear":
             self.final_layer = nn.Linear(bert_embed_dim, entity_final_output_dim)
         elif entity_final_layer_name == "none":
             self.final_layer = nn.Identity()
-        if entity_final_pooling == "max":
-            self.final_pooling = MaxPool(dim=0)
-        elif entity_final_pooling == "avg":
-            self.final_pooling = AvgPool(dim=0)
+        self.pooling = self.get_entity_final_pooling_fn()
 
     def forward(self, batch):
-        if online_bert:
-            bs = batch[1].shape[0]
-            encoded_entity = torch.empty([bs, num_candidates, bert_embed_dim], device="cuda")
+        bs = batch[1].shape[0]
+        if self.inline_bert:
             entity_dict, entity_token_sep_idx, entity_image = batch
             if num_entity_sentence:
-                # entity_dict = {k: v.reshape((bs * num_entity_sentence, max_bert_len)) for k, v in entity_dict.items()}
-                # zipped_entity = self.text_encoder(**entity_dict)["last_hidden_state"]  # type: ignore
-                # zipped_entity = zipped_entity.reshape([bs, num_entity_sentence, max_bert_len, bert_embed_dim])
-                zipped_entity = torch.empty([bs, num_entity_sentence, max_bert_len, bert_embed_dim])
+                zipped_entity = torch.empty([bs, num_entity_sentence, max_bert_len, bert_embed_dim], device="cuda")
                 for i in range(num_entity_sentence):
                     entity_dict_i = {k: v[:, i, :] for k, v in entity_dict.items()}
                     zipped_entity[:, i, :, :] = self.text_encoder(**entity_dict_i)["last_hidden_state"]  # type: ignore
-                num_entity_per_sentence = entity_token_sep_idx.shape[-1]
-                for i in range(bs):
-                    for j in range(num_entity_sentence):
-                        last_idx = 1
-                        for k in range(num_entity_per_sentence):
-                            entity_idx = k + j * num_entity_per_sentence
-                            current_idx = entity_token_sep_idx[i, j, k]
-                            if entity_idx < num_candidates:
-                                entity_feature = self.final_pooling(zipped_entity[i, j, last_idx:current_idx, :])
-                                encoded_entity[i, entity_idx, :] = entity_feature
-                            last_idx = current_idx + 1
+                encoded_entity = self.unzip_entities(entity_dict, entity_token_sep_idx, self.pooling)
             else:
+                encoded_entity = torch.empty([bs, num_candidates, bert_embed_dim], device="cuda")
                 for i in range(num_candidates):
                     entity_i = {k: v[:, i, :] for k, v in entity_dict.items()}
                     if entity_final_pooling != "bert default":
                         seq = self.text_encoder(**entity_i)["last_hidden_state"]  # type: ignore
+                        num_tokens = torch.sum(entity_i["attention_mask"], dim=-1)
                         for j in range(bs):
-                            num_tokens = torch.sum(entity_i["attention_mask"], dim=-1)
-                            encoded_entity[j, i, :] = self.final_pooling(seq[j, 1 : num_tokens[j] - 1, :])
+                            encoded_entity[j, i, :] = self.pooling(seq[j, 1 : num_tokens[j] - 1, :])
                     else:
                         encoded_entity[:, i, :] = self.text_encoder(**entity_i)["pooler_output"]  # type: ignore
         else:
-            encoded_entity, entity_image = batch
+            entity_feature, entity_mask, entity_image = batch
+            if entity_final_pooling == "bert default":
+                encoded_entity = entity_feature[:, :, 0, :]
+            encoded_entity = torch.empty([bs, num_candidates, bert_embed_dim], device="cuda")
+            for i in range(bs):
+                num_tokens = torch.sum(entity_mask[i], dim=-1)
+                for j in range(num_candidates):
+                    encoded_entity[i, j] = self.pooling(entity_feature[i, j, 1 : num_tokens[j] - 1, :])
         encoded_entity = self.final_layer(encoded_entity)
         return encoded_entity
+
+    @staticmethod
+    def get_entity_final_pooling_fn():
+        if entity_final_pooling == "max":
+            return MaxPool(dim=0)
+        elif entity_final_pooling == "avg":
+            return AvgPool(dim=0)
+        else:
+            raise ValueError()
+
+    @staticmethod
+    def unzip_entities(zipped_entity, entity_token_sep_idx, final_pooling_fn):
+        bs = entity_token_sep_idx.shape[0]
+        unzipped_entity = torch.empty([bs, num_candidates, bert_embed_dim], device="cuda")
+        num_entity_per_sentence = entity_token_sep_idx.shape[-1]
+        for i in range(bs):
+            for j in range(num_entity_sentence):
+                last_idx = 1
+                for k in range(num_entity_per_sentence):
+                    entity_idx = k + j * num_entity_per_sentence
+                    current_idx = entity_token_sep_idx[i, j, k]
+                    if entity_idx < num_candidates:
+                        entity_feature = final_pooling_fn(zipped_entity[i, j, last_idx:current_idx, :])
+                        unzipped_entity[i, entity_idx, :] = entity_feature
+                    last_idx = current_idx + 1
+        return unzipped_entity
 
 
 class Model(nn.Module):

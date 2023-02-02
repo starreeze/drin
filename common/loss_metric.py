@@ -50,8 +50,8 @@ class TopkAccuracy(Metric):
     def __init__(self, top_k) -> None:
         super().__init__()
         self.top_k = top_k
-        self.add_state("correct", default=torch.tensor(0), dist_reduce_fx="sum")
-        self.add_state("total", default=torch.tensor(0), dist_reduce_fx="sum")
+        self.add_state("correct", default=torch.tensor(0, device="cuda"), dist_reduce_fx="sum")
+        self.add_state("total", default=torch.tensor(0, device="cuda"), dist_reduce_fx="sum")
 
     def update(self, y_pred: Tensor, y_true: Tensor):
         if y_pred.shape[1] != y_true.shape[1]:
@@ -65,8 +65,8 @@ class TopkAccuracy(Metric):
         return self.correct / self.total  # type: ignore
 
     def reset(self):
-        self.correct = torch.tensor(0)
-        self.total = torch.tensor(0)
+        self.correct = torch.tensor(0, device="cuda")
+        self.total = torch.tensor(0, device="cuda")
 
 
 def main():

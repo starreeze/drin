@@ -2,17 +2,19 @@ from __future__ import annotations
 from common import args
 from common.args import *
 from common.loss_metric import *
-from importlib import import_module
 import torch
 import lightning as pl
 
-model_class = import_module(args.model_type)
+if args.model_type == "baseline":
+    from baseline import data as data_module, model as model_module
+elif args.model_type == "drgcn":
+    from drgcn import data as data_module, model as model_module
 
 
 class MELModel(pl.LightningModule):
     def __init__(self, model) -> None:
         super().__init__()
-        self.metrics = torch.nn.ModuleList([TopkAccuracy(k) for k in metrics_topk])
+        self.metrics = torch.nn.ModuleList([TopkAccuracy(k).to("cuda") for k in metrics_topk]).to("cuda")
         self.loss = TripletLoss(triplet_margin)
         self.model = model
 
@@ -83,8 +85,8 @@ def main():
             continue
         print(arg, getattr(args, arg), sep=" = ")
     pl.seed_everything(seed)
-    datasets = model_class.data.create_datasets()
-    model = MELModel(model_class.model.Model())
+    datasets = data_module.create_datasets()
+    model = MELModel(model_module.Model())
     try:
         for i in range(num_epoch // test_epoch_interval):
             trainer = pl.Trainer(

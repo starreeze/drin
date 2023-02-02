@@ -13,6 +13,7 @@ import numpy as np
 batch_size = 128
 num_workers = 0
 max_mention_token_len = 128
+max_entity_attr_token_len = 64
 max_bert_len = 512
 qid2attr_path = "/home/data_91_c/xsy/mel-dataset/wikimel/entities/qid2abs.json"
 qid2name_path = "/home/data_91_c/xsy/mel-dataset/wikimel/candidates/qid2ne.json"
@@ -102,8 +103,9 @@ def main():
     if process_entity_attr:
         entity_text = QidJsonData(tokenizer, qid2attr_path, qid2name)
         entity_text.write_mapping(os.path.join(output_dir, "qid2idx.json"))
-        features = bert.infer(entity_text, "pooler_output")
+        features, paddings = bert.infer(entity_text, "last_hidden_state", max_entity_attr_token_len)
         np.save(os.path.join(output_dir, f"entity-attr-feature.npy"), features)
+        np.save(os.path.join(output_dir, f"entity-attr-mask.npy"), paddings)
 
 
 if __name__ == "__main__":
