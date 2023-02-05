@@ -4,21 +4,11 @@
 
 from __future__ import annotations
 from common.args import *
+from common.utils import *
 import torch, os, json
 from torch.utils.data import DataLoader, Dataset
 from transformers import BertTokenizer
 import numpy as np
-
-
-def pad_tokens(tokens: dict, target_len: int):
-    return {
-        k: (
-            torch.constant_pad_nd(v, [0, target_len - v.shape[-1]])
-            if v.dtype in [torch.int32, torch.int64, torch.uint8, torch.bool]
-            else v
-        )
-        for k, v in tokens.items()
-    }
 
 
 def extract_mention(tokens: torch.Tensor, start, end) -> tuple[dict[str, torch.Tensor], int, int]:

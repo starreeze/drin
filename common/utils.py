@@ -3,9 +3,10 @@
 # @Author  : Shangyu.Xing (starreeze@foxmail.com)
 
 from __future__ import annotations
-import torch
+import torch, os
 from torch import Tensor
 from torchmetrics import Metric
+from PIL import Image
 
 
 def binary_loss(y_true: Tensor, y_pred: Tensor):
@@ -67,6 +68,31 @@ class TopkAccuracy(Metric):
     def reset(self):
         self.correct = torch.tensor(0, device="cuda")
         self.total = torch.tensor(0, device="cuda")
+
+
+def pad_tokens(tokens: dict, target_len: int):
+    return {
+        k: (
+            torch.constant_pad_nd(v, [0, target_len - v.shape[-1]])
+            if v.dtype in [torch.int32, torch.int64, torch.uint8, torch.bool]
+            else v
+        )
+        for k, v in tokens.items()
+    }
+
+
+def load_image(basename, default_image):
+    for suffix in [".jpg", ".JPG", ".jpeg", ".JPEG", ".png", ".PNG", ".tif", ".TIF", ".tiff", ".TIFF"]:
+        if not os.path.exists(basename + suffix):
+            continue
+        try:
+            image = Image.open(basename + suffix)
+            return image
+        except Exception as e:
+            print(e, end=" - ")
+            break
+    print(f"{basename} error")
+    return Image.open(default_image)
 
 
 def main():

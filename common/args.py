@@ -15,7 +15,6 @@ online_bert = False
 resnet_embed_dim = 2048
 resnet_num_region = 49
 
-
 ## transformer encoder
 transformer_num_layers = 8
 transformer_num_heads = 8
@@ -31,13 +30,13 @@ if model_type == "baseline":
     pre_extract_mention = False  # forced to False if online_bert is False or model type is drgcn
     mention_final_layer_name = "multimodal"  # linear, transformer, multimodal or none
     # max pool or avg extract, forced to avg extract if mention_final_layer_name is linear and max pool if multimodal
-    mention_final_representation = "avg extract"
+    mention_final_representation = "max pool"
     mention_final_output_dim = 768
     entity_final_layer_name = "linear"
     entity_final_pooling = "avg"  # max, avg, bert_default
     entity_final_output_dim = 768
     multimodal_subspace_activation = "gelu"
-    mention_multimodal_attention = "text"  # text or bi
+    mention_multimodal_attention = "bi"  # text or bi
 
 elif model_type == "drgcn":
     drgcn_embed_dim = 768
@@ -56,9 +55,9 @@ entity_text_type = "attr"  # name, brief, attr; only attr is currently supported
 num_entity_sentence = 12  # if 0, disable zipping: every entity is a sentence
 num_candidates = 101  # number of candidates + 1 as the last is reserved for answer
 max_mention_name_len = 32  # max token length of mention name
-max_mention_sentence_len = 128  # max token length of mention sentence, used in online bert and clip
+max_mention_sentence_len = 128  # max token length of mention sentence, used in online bert
 max_entity_attr_char_len = 128  # max char length of entity attribute, used in online bert
-max_entity_attr_token_len = 64  # max token length of entity attribute, used in offline bert and clip
+max_entity_attr_token_len = 64  # max token length of entity attribute, used in offline bert
 
 
 ### path
@@ -66,8 +65,8 @@ qid2entity_answer_path = "/home/data_91_c/xsy/mel-dataset/wikimel/candidates/qid
 qid2attr_path = "/home/data_91_c/xsy/mel-dataset/wikimel/entities/qid2abs.json"
 text_preprocess_dir = "/home/data_91_c/xsy/mel-dataset/text_preprocessed"
 image_preprocess_dir = "/data0/xingsy/mel/processed"
-mention_raw_image_dir = "/home/data_91_c/xsy/mel-dataset/wikimel/entities/cleaned-images"
-entity_raw_image_dir = "/home/data_91_c/xsy/mel-dataset/wikimel/mentions/KVQAimgs"
+# mention_raw_image_dir = "/home/data_91_c/xsy/mel-dataset/wikimel/entities/cleaned-images"
+# entity_raw_image_dir = "/home/data_91_c/xsy/mel-dataset/wikimel/mentions/KVQAimgs"
 
 
 ### train
