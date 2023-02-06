@@ -70,30 +70,28 @@ class MELDataset(Dataset):
         self.lookup = lookup
         if online_bert:
             self.tokenizer = tokenizer
-            self.mention_text_raw = np.load(os.path.join(text_preprocess_dir, "mention-text-raw_%s.npy" % type))
+            self.mention_text_raw = np.load(os.path.join(preprocess_dir, "mention-text-raw_%s.npy" % type))
             if entity_text_type == "name" or entity_text_type == "attr":
-                self.entity_text_raw = np.load(os.path.join(text_preprocess_dir, "entity-name-raw_%s.npy" % type))
+                self.entity_text_raw = np.load(os.path.join(preprocess_dir, "entity-name-raw_%s.npy" % type))
             elif entity_text_type == "brief":
                 self.entity_text_raw = np.load(
-                    os.path.join(text_preprocess_dir, "entity-brief-raw_%s.npy" % type), mmap_mode="r"
+                    os.path.join(preprocess_dir, "entity-brief-raw_%s.npy" % type), mmap_mode="r"
                 )
             else:
                 raise ValueError("entity_text_type must be either 'name', 'brief' or 'attr'")
             self.entity_text_raw = self.entity_text_raw.reshape((-1, num_candidates))
         else:  # mention feature is aligned with model data but entity is not
             self.mention_text_feature = np.load(
-                os.path.join(text_preprocess_dir, "mention-text-feature_%s.npy" % type), mmap_mode="r"
+                os.path.join(preprocess_dir, "mention-text-feature_%s.npy" % type), mmap_mode="r"
             )
-            self.mention_text_mask = np.load(os.path.join(text_preprocess_dir, "mention-text-mask_%s.npy" % type))
-            self.entity_qid = np.load(os.path.join(text_preprocess_dir, "entity-name-raw_%s.npy" % type))
+            self.mention_text_mask = np.load(os.path.join(preprocess_dir, "mention-text-mask_%s.npy" % type))
+            self.entity_qid = np.load(os.path.join(preprocess_dir, "entity-name-raw_%s.npy" % type))
             self.entity_qid = self.entity_qid.reshape((-1, num_candidates))
-            self.entity_text_feature = np.load(
-                os.path.join(text_preprocess_dir, f"entity-{entity_text_type}-feature.npy")
-            )
-            self.entity_text_mask = np.load(os.path.join(text_preprocess_dir, f"entity-{entity_text_type}-mask.npy"))
-        self.start_position = np.load(os.path.join(text_preprocess_dir, "start-pos_%s.npy" % type))
-        self.end_position = np.load(os.path.join(text_preprocess_dir, "end-pos_%s.npy" % type))
-        self.answer = np.load(os.path.join(text_preprocess_dir, "answer_%s.npy" % type))
+            self.entity_text_feature = np.load(os.path.join(preprocess_dir, f"entity-{entity_text_type}-feature.npy"))
+            self.entity_text_mask = np.load(os.path.join(preprocess_dir, f"entity-{entity_text_type}-mask.npy"))
+        self.start_position = np.load(os.path.join(preprocess_dir, "start-pos_%s.npy" % type))
+        self.end_position = np.load(os.path.join(preprocess_dir, "end-pos_%s.npy" % type))
+        self.answer = np.load(os.path.join(preprocess_dir, "answer_%s.npy" % type))
         if mention_final_layer_name == "multimodal":
             self.mention_image: np.memmap = np.load(
                 os.path.join(image_preprocess_dir, "mention-image_%s.npy" % type), mmap_mode="r"
@@ -181,7 +179,7 @@ def create_datasets():
             with open(qid2attr_path, "r") as f:
                 qid2attr = json.load(f)
     else:
-        with open(os.path.join(text_preprocess_dir, "qid2idx.json"), "r") as f:
+        with open(os.path.join(preprocess_dir, "qid2idx.json"), "r") as f:
             qid2idx = json.load(f)
     lookup = torch.eye(num_candidates - 1, dtype=torch.int8)
     all_zero_line = torch.zeros((1, num_candidates - 1), dtype=torch.int8)

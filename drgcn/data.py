@@ -4,48 +4,37 @@
 
 from __future__ import annotations
 from common.args import *
-from baseline.data import pad_tokens, zip_entities
 import torch, os, json
 from torch.utils.data import DataLoader, Dataset
-from transformers import BertTokenizer, AutoImageProcessor, CLIPProcessor
-from PIL import Image
 import numpy as np
 
 
-class MELDataset(Dataset):
+class MELData(Dataset):
     """
-    mention_token_dict, mention_start_pos, mention_end_pos, mention_image, entity_token_dict, entity_sep_idx,
-    entity_image, miet_similarity, mtei_similarity, answer
+    mention_text_feature, mention_text_mask, mention_start_pos, mention_end_pos, mention_image_feature,
+    mention_object_feature, mention_object_score, entity_text_feature, entity_text_mask, entity_image_feature,
+    entity_object_feature, entity_object_score, miet_similarity, mtei_similarity, answer
     """
 
-    def __init__(self, type, lookup, bert_tokenizer, resnet_processor, clip_processor, qid2name, qid2attr) -> None:
+    def __init__(self, type, onehot, entity_text_feature, entity_text_mask,
+                 entity_image_feature, entity_object_feature, entity_object_score):
         super().__init__()
-        self.qid2name: dict[str, str] = qid2name
-        self.qid2attr: dict[str, str] = qid2attr
-        self.lookup = lookup
-        self.bert_tokenizer = bert_tokenizer
-        self.resnet_processor = resnet_processor
-        self.clip_processor = clip_processor
-        # note that mention_id is stored as int32; used to fetch images
-        self.mention_id = np.load(os.path.join(text_preprocess_dir, "mention-id_%s.npy" % type))
-        self.mention_text_raw = np.load(os.path.join(text_preprocess_dir, "mention-text-raw_%s.npy" % type))
-        if entity_text_type == "name" or entity_text_type == "attr":
-            self.entity_text_raw = np.load(os.path.join(text_preprocess_dir, "entity-name-raw_%s.npy" % type))
-        elif entity_text_type == "brief":
-            self.entity_text_raw = np.load(
-                os.path.join(text_preprocess_dir, "entity-brief-raw_%s.npy" % type), mmap_mode="r"
-            )
-        self.entity_text_raw = self.entity_text_raw.reshape((-1, num_candidates))
-        self.start_position = np.load(os.path.join(text_preprocess_dir, "start-pos_%s.npy" % type))
-        self.end_position = np.load(os.path.join(text_preprocess_dir, "end-pos_%s.npy" % type))
-        self.answer = np.load(os.path.join(text_preprocess_dir, "answer_%s.npy" % type))
+        self.onehot = onehot
+        self.entity_text_feature = entity_text_feature
+        self.entity_text_mask = entity_text_mask
+        self.entity_image_feature = entity_image_feature
+        self.entity_object_feature = entity_object_feature
+        self.entity_object_score = entity_object_score
+        for var_name in 'mention_text_feature, mention_text_mask, mention_start_pos, mention_end_pos, mention_image_feature, mention_object_feature, mention_object_score, miet_similarity, mtei_similarity, answer'.split(', '):
+            setattr(self, var_name, np.load(os.path.join(preprocess_dir, f"{var_name}_{type}.npy")))
+
 
     def __len__(self):
         return len(self.answer)
 
     def __getitem__(self, idx):
         start, end = self.start_position[idx], self.end_position[idx]
-        answer = self.lookup[self.answer[idx]]
+        answer = self.onehot[self.answer[idx]]
         mention_text = self.mention_text_raw[idx]
         if entity_text_type == "name":
             entity_text = list(map(self.qid2name.get, self.entity_text_raw[idx]))
@@ -107,19 +96,19 @@ def create_datasets():
     clip_processor = CLIPProcessor.from_pretrained(clip_model_name)
     return [
         DataLoader(
-            MELDataset("train", lookup, tokenizer, resnet_processor, clip_processor, qid2name, qid2attr, qid2idx),
+            MELData("train", lookup, tokenizer, resnet_processor, clip_processor, qid2name, qid2attr, qid2idx),
             batch_size,
             shuffle_train_data,
             num_workers=dataloader_workers,
         ),
         DataLoader(
-            MELDataset("valid", lookup, tokenizer, resnet_processor, clip_processor, qid2name, qid2attr, qid2idx),
+            MELData("valid", lookup, tokenizer, resnet_processor, clip_processor, qid2name, qid2attr, qid2idx),
             batch_size,
             False,
             num_workers=dataloader_workers,
         ),
         DataLoader(
-            MELDataset("test", lookup, tokenizer, resnet_processor, clip_processor, qid2name, qid2attr, qid2idx),
+            MELData("test", lookup, tokenizer, resnet_processor, clip_processor, qid2name, qid2attr, qid2idx),
             batch_size,
             False,
             num_workers=dataloader_workers,

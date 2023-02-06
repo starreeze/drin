@@ -83,7 +83,10 @@ def main():
     for arg in dir(args):
         if arg.startswith("__"):
             continue
-        print(arg, getattr(args, arg), sep=" = ")
+        value = getattr(args, arg)
+        if type(value) == str:
+            value = "'" + value + "'"
+        print(arg, value, sep=" = ")
     pl.seed_everything(seed)
     datasets = data_module.create_datasets()
     model = MELModel(model_module.Model())

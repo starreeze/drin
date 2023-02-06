@@ -8,7 +8,7 @@ max_bert_len = 512
 bert_embed_dim = 768
 CLS = 101
 SEP = 102
-finetune_bert = False  # this will be set to False if online_bert is False
+finetune_bert = False  # forced to False if online_bert is False
 online_bert = False
 
 ## resnet
@@ -40,14 +40,15 @@ if model_type == "baseline":
 
 elif model_type == "drgcn":
     drgcn_embed_dim = 768
-    rcnn_topk = 5
+    rcnn_topk = {"mention": 3, "entity": 1}
     # we reuse unimodal mention_encoder and entity_encoder from baseline as vertex feature extractors
     mention_final_layer_name = "transformer"  # linear, transformer or none
     mention_final_representation = "avg extract"
+    entity_final_layer_name = "linear"
+    entity_final_pooling = "avg"
+
     mention_final_output_dim = drgcn_embed_dim
     entity_final_output_dim = drgcn_embed_dim
-    entity_final_layer_name = "linear"
-    entity_final_pooling = "max"
 
 
 ### data
@@ -63,10 +64,8 @@ max_entity_attr_token_len = 64  # max token length of entity attribute, used in 
 ### path
 qid2entity_answer_path = "/home/data_91_c/xsy/mel-dataset/wikimel/candidates/qid2ne.json"
 qid2attr_path = "/home/data_91_c/xsy/mel-dataset/wikimel/entities/qid2abs.json"
-text_preprocess_dir = "/home/data_91_c/xsy/mel-dataset/text_preprocessed"
-image_preprocess_dir = "/data0/xingsy/mel/processed"
-# mention_raw_image_dir = "/home/data_91_c/xsy/mel-dataset/wikimel/entities/cleaned-images"
-# entity_raw_image_dir = "/home/data_91_c/xsy/mel-dataset/wikimel/mentions/KVQAimgs"
+preprocess_dir = "/home/data_91_c/xsy/mel-dataset/text_preprocessed"
+image_preprocess_dir = "/data0/xingsy/mel/processed"  # TODO: change this to new and try baseline again
 
 
 ### train

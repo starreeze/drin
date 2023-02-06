@@ -7,7 +7,6 @@ from __future__ import annotations
 import json, torch, os, sys, torchvision
 from PIL import Image
 from torch.utils.data import DataLoader, Dataset
-from torch.nn import functional as F
 from transformers import AutoFeatureExtractor, ResNetModel
 from tqdm import tqdm
 import numpy as np
@@ -27,7 +26,7 @@ mention_image_dir = "/home/data_91_c/xsy/mel-dataset/wikimel/mentions/KVQAimgs"
 entity_image_dir = "/home/data_91_c/xsy/mel-dataset/wikimel/entities/cleaned-images"
 output_dir = "/data0/xsy/mel"
 default_image = "/home/data_91_c/xsy/mel-dataset/default.jpg"
-extract_feature = False
+extract_feature = True
 extract_object = True
 
 
@@ -168,7 +167,11 @@ def main():
     for type in ["valid", "train", "test"]:
         with open(mention_text_path % type, "r") as f:
             mention_text = json.load(f)
-        image_file_path = [os.path.join(mention_image_dir, k.split("-")[0]) for k in mention_text.keys()]
+        image_file_path = [
+            os.path.join(mention_image_dir, k.split("-")[0])
+            for k, v in mention_text.items()
+            if v["mentions"] in v["sentence"]
+        ]
         inferrer.infer(type, "mention", image_file_path)
 
     with open(qid2name_path, "r") as f:

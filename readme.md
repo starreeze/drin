@@ -1,3 +1,66 @@
+# Data
+
+## wikidiverse
+
+### train
+
+all data: 13205
+cleaned data: 10913
+image errors: 7389
+entity missing: 25852
+no matching: 2292
+acc: 82.643
+
+### valid
+
+all data: 1552
+cleaned data: 1302
+image errors: 841
+entity missing: 3145
+no matching: 250
+acc: 83.892
+
+### test
+
+all data: 1570
+cleaned data: 1288
+image errors: 908
+entity missing: 3028
+no matching: 282
+acc: 82.038
+
+## wikimel
+
+### train
+
+all data: 18092
+cleaned data: 17568
+mention image errors: 1
+entity image errors: 192968
+brief missing: 59132
+no matching: 3397
+mention not found: 524
+
+### valid
+
+all data: 2585
+cleaned data: 2516
+mention image errors: 0
+entity image errors: 27366
+brief missing: 7979
+no matching: 510
+mention not found: 69
+
+### test
+
+all data: 5169
+cleaned data: 5022
+mention image errors: 0
+entity image errors: 55282
+brief missing: 17297
+no matching: 980
+mention not found: 147
+
 # Method & Result
 
 ## 1st step
