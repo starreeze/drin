@@ -94,11 +94,11 @@ class MELDataset(Dataset):
         self.answer = np.load(os.path.join(preprocess_dir, "answer_%s.npy" % type))
         if mention_final_layer_name == "multimodal":
             self.mention_image: np.memmap = np.load(
-                os.path.join(image_preprocess_dir, "mention-image_%s.npy" % type), mmap_mode="r"
+                os.path.join(image_preprocess_dir, "mention-image-feature_%s.npy" % type), mmap_mode="r"
             )
         if entity_final_layer_name == "multimodal":
             self.entity_image: np.memmap = np.load(
-                os.path.join(image_preprocess_dir, "entity-image_%s.npy" % type), mmap_mode="r"
+                os.path.join(image_preprocess_dir, "entity-image-feature_%s.npy" % type), mmap_mode="r"
             )
 
     def __len__(self):

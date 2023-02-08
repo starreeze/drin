@@ -222,6 +222,12 @@ margin=0.5, metion full cross & sentence maxpool, 30 epoch:
 top-1: 0.50976  top-5: 0.82855  top-10: 0.90661 top-20: 0.95599 top-50: 0.98566
 ```
 
+offline bert
+
+```
+top-1: 0.46094  top-5: 0.80469  top-10: 0.90625 top-20: 0.96094 top-50: 0.98438
+```
+
 # Explanation for 1st model
 
 1. Why this time much higher?

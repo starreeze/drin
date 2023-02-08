@@ -3,8 +3,11 @@
 # @Author  : Shangyu.Xing (starreeze@foxmail.com)
 
 from __future__ import annotations
+import os, sys, json, torch
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
 from common.args import *
-import torch, os, json
 from torch.utils.data import DataLoader, Dataset
 import numpy as np
 
@@ -16,108 +19,141 @@ class MELData(Dataset):
     entity_object_feature, entity_object_score, miet_similarity, mtei_similarity, answer
     """
 
-    def __init__(self, type, onehot, entity_text_feature, entity_text_mask,
-                 entity_image_feature, entity_object_feature, entity_object_score):
+    def __init__(self, inputs):
         super().__init__()
-        self.onehot = onehot
-        self.entity_text_feature = entity_text_feature
-        self.entity_text_mask = entity_text_mask
-        self.entity_image_feature = entity_image_feature
-        self.entity_object_feature = entity_object_feature
-        self.entity_object_score = entity_object_score
-        for var_name in 'mention_text_feature, mention_text_mask, mention_start_pos, mention_end_pos, mention_image_feature, mention_object_feature, mention_object_score, miet_similarity, mtei_similarity, answer'.split(', '):
-            setattr(self, var_name, np.load(os.path.join(preprocess_dir, f"{var_name}_{type}.npy")))
-
+        self.onehot = inputs[0]
+        self.entity_text_feature = inputs[1]
+        self.entity_text_mask = inputs[2]
+        self.entity_image_feature = inputs[3]
+        self.entity_object_feature = inputs[4]
+        self.entity_object_score = inputs[5]
+        type = inputs[6]
+        # assert len(entity_text_feature) == len(entity_image_feature) == len(entity_object_feature)
+        self.mention_text_feature = np.load(
+            os.path.join(preprocess_dir, f"mention-text-feature_{type}.npy"), mmap_mode=mention_mmap
+        )
+        self.mention_text_mask = np.load(os.path.join(preprocess_dir, f"mention-text-mask_{type}.npy"))
+        self.mention_start_pos = np.load(os.path.join(preprocess_dir, f"start-pos_{type}.npy"))
+        self.mention_end_pos = np.load(os.path.join(preprocess_dir, f"end-pos_{type}.npy"))
+        self.mention_image_feature = np.load(
+            os.path.join(preprocess_dir, f"mention-image-feature_{type}.npy"), mmap_mode=mention_mmap
+        )
+        self.mention_object_feature = np.load(
+            os.path.join(preprocess_dir, f"mention-object-feature_{type}.npy"), mmap_mode=mention_mmap
+        )
+        self.mention_object_score = np.load(os.path.join(preprocess_dir, f"mention-object-score_{type}.npy"))
+        self.miet_similarity = np.load(os.path.join(preprocess_dir, f"similarity-miet_{type}.npy"))
+        self.mtei_similarity = np.load(os.path.join(preprocess_dir, f"similarity-eimt_{type}.npy"))
+        self.answer = np.load(os.path.join(preprocess_dir, f"answer_{type}.npy"))
+        with open(os.path.join(preprocess_dir, "qid2idx.json"), "r") as f:
+            self.qid2idx = json.load(f)
+        self.entity_qid = np.load(os.path.join(preprocess_dir, f"entity-name-raw_{type}.npy"))
+        self.entity_qid = self.entity_qid.reshape((-1, num_candidates))
+        assert (
+            len(self.mention_text_feature)
+            == len(self.mention_start_pos)
+            == len(self.mention_image_feature)
+            == len(self.mention_object_feature)
+            == len(self.miet_similarity)
+            == len(self.answer)
+            == len(self.entity_qid)
+        )
 
     def __len__(self):
         return len(self.answer)
 
     def __getitem__(self, idx):
-        start, end = self.start_position[idx], self.end_position[idx]
-        answer = self.onehot[self.answer[idx]]
-        mention_text = self.mention_text_raw[idx]
-        if entity_text_type == "name":
-            entity_text = list(map(self.qid2name.get, self.entity_text_raw[idx]))
-        elif entity_text_type == "brief":
-            entity_text = list(self.entity_text_raw[idx])
-        elif entity_text_type == "attr":
-            entity_text = [
-                (self.qid2name[qid] + ". " + self.qid2attr[qid].replace(".", ";"))[:max_entity_attr_char_len]
-                for qid in self.entity_text_raw[idx]
-            ]
-        mention_image_raw = Image.open(os.path.join(mention_raw_image_dir, str(self.mention_id[idx])))
-        entity_image_raw = [Image.open(os.path.join(entity_raw_image_dir, qid)) for qid in self.entity_text_raw[idx]]
-
-        mention_token: dict[str, torch.Tensor] = self.bert_tokenizer(
-            mention_text, return_tensors="pt", padding=True, truncation=True
-        )  # type: ignore
-        mention_token = {k: v.squeeze(0) for k, v in mention_token.items()}
-        if num_entity_sentence:
-            entity_token = self.bert_tokenizer(entity_text)  # type: ignore
-            entities_processed = zip_entities(entity_token["input_ids"])
-        else:
-            entity_token = self.bert_tokenizer(entity_text, return_tensors="pt", padding=True, truncation=True)  # type: ignore
-            entities_processed = (pad_tokens(entity_token, max_bert_len), 0)
-        mention_token = pad_tokens(mention_token, max_bert_len)
-
-        mention_image_processed = self.resnet_processor(mention_image_raw, return_tensors="pt") # TODO
-        entity_image_processed = self.resnet_processor(entity_image_raw, return_tensors="pt")
-
-        # mention image to all entity text, [n] stacked to [n,n]
-        miet_similarity = self.clip_processor(, return_tensors="pt", padding=True, truncation=True)
-        miet_similarity = pad_tokens(miet_similarity, max_entity_attr_token_len)
-        mtei_similarity = self.clip_processor(, return_tensors="pt", padding=True, truncation=True)
-        mtei_similarity = pad_tokens(mtei_similarity, max_mention_sentence_len)
-
+        entity_idx = list(map(self.qid2idx.get, self.entity_qid[idx]))
+        mention_text_feature = self._torch_tensor(self.mention_text_feature[idx], mention_mmap)
+        mention_text_mask = self._torch_tensor(self.mention_text_mask[idx])
+        mention_start_pos = self._torch_tensor(self.mention_start_pos[idx])
+        mention_end_pos = self._torch_tensor(self.mention_end_pos[idx])
+        mention_image_feature = self._torch_tensor(self.mention_image_feature[idx], mention_mmap)
+        mention_object_feature = self._torch_tensor(self.mention_object_feature[idx], mention_mmap)
+        mention_object_score = self._torch_tensor(self.mention_object_score[idx])
+        miet_similarity = self._torch_tensor(self.miet_similarity[idx])
+        mtei_similarity = self._torch_tensor(self.mtei_similarity[idx])
+        entity_text_feature = self._torch_tensor(self.entity_text_feature[entity_idx], entity_mmap)
+        entity_text_mask = self._torch_tensor(self.entity_text_mask[entity_idx])
+        entity_image_feature = self._torch_tensor(self.entity_image_feature[entity_idx], entity_mmap)
+        entity_object_feature = self._torch_tensor(self.entity_object_feature[entity_idx], entity_mmap)
+        entity_object_score = self._torch_tensor(self.entity_object_score[entity_idx])
+        answer = self._torch_tensor(self.onehot[self.answer[idx]])
         return (
-            (
-                mention_token,
-                start + 1,
-                end + 1,
-                mention_image_processed,
-            )
-            + entities_processed
-            + (entity_image_processed, miet_similarity, mtei_similarity, answer)
+            mention_text_feature,
+            mention_text_mask,
+            mention_start_pos + 1,
+            mention_end_pos + 1,
+            mention_image_feature,
+            mention_object_feature,
+            mention_object_score,
+            entity_text_feature,
+            entity_text_mask,
+            entity_image_feature,
+            entity_object_feature,
+            entity_object_score,
+            miet_similarity,
+            mtei_similarity,
+            answer,
         )
+
+    @staticmethod
+    def _torch_tensor(x, mmap=None):
+        if mmap == "r":
+            x = x.copy()
+        return torch.as_tensor(x)
+
+    @staticmethod
+    def get_loader(
+        type,
+        onehot,
+        entity_text_feature,
+        entity_text_mask,
+        entity_image_feature,
+        entity_object_feature,
+        entity_object_score,
+    ):
+        dataset = MELData(
+            (
+                onehot,
+                entity_text_feature,
+                entity_text_mask,
+                entity_image_feature,
+                entity_object_feature,
+                entity_object_score,
+                type,
+            )
+        )
+        return DataLoader(dataset, batch_size, type == "train" and shuffle_train_data, num_workers=dataloader_workers)
 
 
 def create_datasets():
-    qid2name, qid2attr, qid2idx = None, None, None
-    with open(qid2entity_answer_path, "r") as f:
-        qid2name = json.load(f)
-    if entity_text_type == "attr":
-        with open(qid2attr_path, "r") as f:
-            qid2attr = json.load(f)
-    lookup = torch.eye(num_candidates - 1, dtype=torch.int8)
-    all_zero_line = torch.zeros((1, num_candidates - 1), dtype=torch.int8)
-    lookup = torch.concatenate([lookup, all_zero_line], dim=0)
-    tokenizer = BertTokenizer.from_pretrained("bert-base-cased")
-    resnet_processor = AutoImageProcessor.from_pretrained(resnet_model_name)
-    clip_processor = CLIPProcessor.from_pretrained(clip_model_name)
+    onehot = np.eye(num_candidates - 1, dtype=np.uint8)
+    all_zero_line = np.zeros((1, num_candidates - 1), dtype=np.uint8)
+    onehot = np.concatenate([onehot, all_zero_line], 0)
+    entity_text_feature = np.load(os.path.join(preprocess_dir, "entity-attr-feature.npy"), mmap_mode=entity_mmap)
+    entity_text_mask = np.load(os.path.join(preprocess_dir, "entity-attr-mask.npy"))
+    entity_image_feature = np.load(os.path.join(preprocess_dir, "entity-image-feature_all.npy"), mmap_mode=entity_mmap)
+    entity_object_feature = np.load(
+        os.path.join(preprocess_dir, "entity-object-feature_all.npy"), mmap_mode=entity_mmap
+    )
+    entity_object_score = np.load(os.path.join(preprocess_dir, "entity-object-score_all.npy"))
     return [
-        DataLoader(
-            MELData("train", lookup, tokenizer, resnet_processor, clip_processor, qid2name, qid2attr, qid2idx),
-            batch_size,
-            shuffle_train_data,
-            num_workers=dataloader_workers,
-        ),
-        DataLoader(
-            MELData("valid", lookup, tokenizer, resnet_processor, clip_processor, qid2name, qid2attr, qid2idx),
-            batch_size,
-            False,
-            num_workers=dataloader_workers,
-        ),
-        DataLoader(
-            MELData("test", lookup, tokenizer, resnet_processor, clip_processor, qid2name, qid2attr, qid2idx),
-            batch_size,
-            False,
-            num_workers=dataloader_workers,
-        ),
+        MELData.get_loader(
+            type,
+            onehot,
+            entity_text_feature,
+            entity_text_mask,
+            entity_image_feature,
+            entity_object_feature,
+            entity_object_score,
+        )
+        for type in ["train", "valid", "test"]
     ]
 
 
 if __name__ == "__main__":
-    pass
-    # iter = create_datasets()[0]._get_iterator()
-    # x = next(iter)
-    # print(x)
+    # pass
+    iter = create_datasets()[0]._get_iterator()
+    x = next(iter)
+    print(x)
