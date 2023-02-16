@@ -4,23 +4,18 @@
 """extract text features(mention and entity) with bert"""
 
 from __future__ import annotations
-import json, torch, os
+import json, torch, os, sys
 from torch.utils.data import DataLoader, Dataset
 from transformers import BertTokenizer, BertModel
 from tqdm import tqdm
 import numpy as np
 
-batch_size = 128
-num_workers = 0
-max_mention_token_len = 128
-max_entity_attr_token_len = 64
-max_bert_len = 512
-qid2attr_path = "/home/data_91_c/xsy/mel-dataset/wikimel/entities/qid2abs.json"
-qid2name_path = "/home/data_91_c/xsy/mel-dataset/wikimel/candidates/qid2ne.json"
-text_preprocess_dir = "/home/data_91_c/xsy/mel-dataset/text_preprocessed"
-output_dir = "/data0/xsy/mel"
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(SCRIPT_DIR))
+from common.args import *
+
 process_mention = True
-process_entity_attr = True
+process_entity = True
 
 
 class TextArrayData(Dataset):
@@ -35,9 +30,10 @@ class TextArrayData(Dataset):
         return len(self.raw_data)
 
     def __getitem__(self, idx):
-        text = str(self.raw_data[idx])
+        text = self.raw_data[idx]
+        # text = list(text) if isinstance(text, np.ndarray) else text
         token = self.tokenizer(text, return_tensors="pt", padding=True, truncation=True)  # type: ignore
-        token = {k: torch.constant_pad_nd(v[0], [0, max_bert_len - v.shape[-1]]) for k, v in token.items()}
+        token = {k: torch.constant_pad_nd(v.squeeze(0), [0, max_bert_len - v.shape[-1]]) for k, v in token.items()}
         return token
 
 
@@ -72,7 +68,7 @@ class BertInfer:
         self.model = BertModel.from_pretrained("bert-base-cased").to("cuda")  # type: ignore
 
     def infer(self, text_dataset, output_type, max_len=None):
-        data = DataLoader(text_dataset, batch_size, shuffle=False, num_workers=num_workers)
+        data = DataLoader(text_dataset, batch_size, shuffle=False, num_workers=dataloader_workers)
         features, paddings = [], []
         with torch.no_grad():
             for batch in tqdm(data):
@@ -90,22 +86,27 @@ class BertInfer:
 def main():
     tokenizer = BertTokenizer.from_pretrained("bert-base-cased")
     bert = BertInfer()
-    if process_mention:
-        for type in ["train", "valid", "test"]:
+
+    for type in ["train", "valid", "test"]:
+        if process_mention:
             print("mention " + type)
-            mention_text = TextArrayData(tokenizer, os.path.join(text_preprocess_dir, "mention-text-raw_%s.npy" % type))
-            features, paddings = bert.infer(mention_text, "last_hidden_state", max_mention_token_len)
-            np.save(os.path.join(output_dir, f"mention-text-feature_{type}.npy"), features)
-            np.save(os.path.join(output_dir, f"mention-text-mask_{type}.npy"), paddings)
-    print("entity")
-    with open(qid2name_path, "r") as f:
-        qid2name = json.load(f)
-    if process_entity_attr:
+            mention_text = TextArrayData(tokenizer, os.path.join(preprocess_dir, "mention-text-raw_%s.npy" % type))
+            features, paddings = bert.infer(mention_text, "last_hidden_state", max_mention_sentence_len)
+            np.save(os.path.join(preprocess_dir, f"mention-text-feature_{type}.npy"), features)
+            np.save(os.path.join(preprocess_dir, f"mention-text-mask_{type}.npy"), paddings)
+        if dataset_name == "wikidiverse" and process_entity:
+            print("entity " + type)
+            entity_text = TextArrayData(tokenizer, os.path.join(preprocess_dir, "entity-attr-raw_%s.npy" % type))
+            features = bert.infer(entity_text, "pooler_output", max_entity_attr_token_len)
+            np.save(os.path.join(preprocess_dir, f"entity-attr-feature_{type}.npy"), features)
+    if dataset_name == "wikimel" and process_entity:
+        print("entity")
+        with open(qid2entity_path, "r") as f:
+            qid2name = json.load(f)
         entity_text = QidJsonData(tokenizer, qid2attr_path, qid2name)
-        entity_text.write_mapping(os.path.join(output_dir, "qid2idx.json"))
-        features, paddings = bert.infer(entity_text, "last_hidden_state", max_entity_attr_token_len)
-        np.save(os.path.join(output_dir, f"entity-attr-feature.npy"), features)
-        np.save(os.path.join(output_dir, f"entity-attr-mask.npy"), paddings)
+        entity_text.write_mapping(os.path.join(preprocess_dir, "qid2idx.json"))
+        features = bert.infer(entity_text, "last_hidden_state", max_entity_attr_token_len)
+        np.save(os.path.join(preprocess_dir, f"entity-attr-feature.npy"), features)
 
 
 if __name__ == "__main__":

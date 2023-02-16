@@ -37,7 +37,9 @@ class VertexEncoder(nn.Module):
         )
         encoded_entity_text = self.entity_text_encoder((entity_text_feature, entity_text_mask, None))
         encoded_mention_image = torch.mean(mention_image_feature, dim=-2)
-        encoded_entity_image = torch.mean(entity_image_feature, dim=-2)
+        encoded_entity_image = entity_image_feature
+        if len(encoded_entity_image.shape) == 4:
+            encoded_entity_image = torch.mean(encoded_entity_image, dim=-2)
         return [encoded_mention_text, encoded_mention_image, encoded_entity_text, encoded_entity_image]
 
 
@@ -64,15 +66,16 @@ class EdgeEncoder(nn.Module):
         entity_object_score,
     ):
         mention_text_encoded = self.mention_text_encoder(mention_text_feature, mention_start_pos, mention_end_pos)
-        mention_text_encoded = mention_text_encoded.unsqueeze(1).expand(-1, num_candidates, -1)
+        mention_text_encoded = mention_text_encoded.unsqueeze(1).expand(-1, num_candidates_model, -1)
         mtet = self.similarity_fn(mention_text_encoded, entity_text_feature[:, :, 0])  # entity CLS
 
         mention_object_feature = torch.mean(mention_object_feature, dim=-2)
-        mention_object_feature = mention_object_feature.unsqueeze(1).expand(-1, num_candidates, -1, -1)
-        mention_object_score = mention_object_score.unsqueeze(1).expand(-1, num_candidates, -1)
-        entity_object_feature = torch.mean(entity_object_feature, dim=-2)
-        similarity = torch.zeros(mention_object_feature.shape[0], num_candidates, device="cuda")
-        scores = torch.zeros(mention_object_feature.shape[0], num_candidates, device="cuda")
+        mention_object_feature = mention_object_feature.unsqueeze(1).expand(-1, num_candidates_model, -1, -1)
+        mention_object_score = mention_object_score.unsqueeze(1).expand(-1, num_candidates_model, -1)
+        if len(entity_object_feature.shape) == 5:
+            entity_object_feature = torch.mean(entity_object_feature, dim=-2)
+        similarity = torch.zeros(mention_object_feature.shape[0], num_candidates_model, device="cuda")
+        scores = torch.zeros(mention_object_feature.shape[0], num_candidates_model, device="cuda")
         for i in range(mention_object_feature.shape[2]):
             for j in range(entity_object_feature.shape[2]):
                 sim = self.similarity_fn(mention_object_feature[:, :, i], entity_object_feature[:, :, j])
@@ -90,10 +93,11 @@ class GCNLayer(nn.Module):
     edges: [batch_size, num_candidates, gcn_embed_dim]
     output same shape as input
     """
+
     # [u --- [e=N(u) --- v=N(e)]]
-    vertex_graph = [[[0,2],[1,3]],[[2,2],[3,3]],[[0,0],[2,1]],[[1,0],[3,1]]]
+    vertex_graph = [[[0, 2], [1, 3]], [[2, 2], [3, 3]], [[0, 0], [2, 1]], [[1, 0], [3, 1]]]
     # [u=N(e) --- e --- v=N(e)]
-    edge_graph = [[0,2],[0,3],[1,2],[1,3]]
+    edge_graph = [[0, 2], [0, 3], [1, 2], [1, 3]]
 
     def __init__(self):
         super().__init__()
@@ -111,7 +115,7 @@ class GCNLayer(nn.Module):
             # TODO: linear and activation, then add e
             new_edges.append(new_e)
         return new_vertexes, new_edges
-    
+
     def convolute_vertex(self, edge, neighbor):
         pass
 
@@ -166,12 +170,12 @@ class Model(nn.Module):
         )  # tt, ti, it, ii
         edges = [
             e.unsqueeze(-1).expand(-1, -1, gcn_embed_dim)
-            for e in (edges[0], mtei_similarity, miet_similarity, edges[1])
+            for e in (edges[0], mtei_similarity / 100, miet_similarity / 100, edges[1])
         ]
         for gcn_layer in self.gcn_layers:
             vertexes, edges = gcn_layer(vertexes, edges)
         mention, entity = vertexes[0], vertexes[2]
-        mention = mention.unsqueeze(1).expand(-1, num_candidates, -1)
+        mention = mention.unsqueeze(1).expand(-1, num_candidates_model, -1)
         return self.similarity_fn(mention, entity)
 
 

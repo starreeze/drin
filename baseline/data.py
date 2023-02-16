@@ -79,26 +79,33 @@ class MELDataset(Dataset):
                 )
             else:
                 raise ValueError("entity_text_type must be either 'name', 'brief' or 'attr'")
-            self.entity_text_raw = self.entity_text_raw.reshape((-1, num_candidates))
+            self.entity_text_raw = self.entity_text_raw.reshape((-1, num_candidates_model))
         else:  # mention feature is aligned with model data but entity is not
             self.mention_text_feature = np.load(
                 os.path.join(preprocess_dir, "mention-text-feature_%s.npy" % type), mmap_mode="r"
             )
             self.mention_text_mask = np.load(os.path.join(preprocess_dir, "mention-text-mask_%s.npy" % type))
-            self.entity_qid = np.load(os.path.join(preprocess_dir, "entity-name-raw_%s.npy" % type))
-            self.entity_qid = self.entity_qid.reshape((-1, num_candidates))
-            self.entity_text_feature = np.load(os.path.join(preprocess_dir, f"entity-{entity_text_type}-feature.npy"))
-            self.entity_text_mask = np.load(os.path.join(preprocess_dir, f"entity-{entity_text_type}-mask.npy"))
+            if dataset_name == "wikimel":
+                self.entity_qid = np.load(os.path.join(preprocess_dir, "entity-name-raw_%s.npy" % type))
+                self.entity_qid = self.entity_qid.reshape((-1, num_candidates_model))
+                self.entity_text_feature = np.load(
+                    os.path.join(preprocess_dir, f"entity-{entity_text_type}-feature.npy")
+                )
+                self.entity_text_mask = np.load(os.path.join(preprocess_dir, f"entity-{entity_text_type}-mask.npy"))
+            elif dataset_name == "wikidiverse":
+                self.entity_text_feature = np.load(
+                    os.path.join(preprocess_dir, f"entity-{entity_text_type}-feature_{type}.npy")
+                ).reshape((-1, num_candidates_model, bert_embed_dim))
         self.start_position = np.load(os.path.join(preprocess_dir, "start-pos_%s.npy" % type))
         self.end_position = np.load(os.path.join(preprocess_dir, "end-pos_%s.npy" % type))
         self.answer = np.load(os.path.join(preprocess_dir, "answer_%s.npy" % type))
         if mention_final_layer_name == "multimodal":
             self.mention_image: np.memmap = np.load(
-                os.path.join(image_preprocess_dir, "mention-image-feature_%s.npy" % type), mmap_mode="r"
+                os.path.join(preprocess_dir, "mention-image-feature_%s.npy" % type), mmap_mode="r"
             )
         if entity_final_layer_name == "multimodal":
             self.entity_image: np.memmap = np.load(
-                os.path.join(image_preprocess_dir, "entity-image-feature_%s.npy" % type), mmap_mode="r"
+                os.path.join(preprocess_dir, "entity-image-feature_%s.npy" % type), mmap_mode="r"
             )
 
     def __len__(self):
@@ -148,20 +155,24 @@ class MELDataset(Dataset):
         else:
             mention_feature = torch.from_numpy(self.mention_text_feature[idx].copy())
             mention_mask = torch.from_numpy(self.mention_text_mask[idx])
-            entity_feature = torch.empty([num_candidates, max_entity_attr_token_len, bert_embed_dim])
-            entity_mask = torch.empty([num_candidates, max_entity_attr_token_len], dtype=torch.int64)
-            for i in range(num_candidates):
-                feature_idx = self.qid2idx[self.entity_qid[idx, i]]
-                entity_feature[i] = torch.from_numpy(self.entity_text_feature[feature_idx])
-                entity_mask[i] = torch.from_numpy(self.entity_text_mask[feature_idx])
+            if dataset_name == "wikimel":
+                entity_feature = torch.empty([num_candidates_model, max_entity_attr_token_len, bert_embed_dim])
+                entity_mask = torch.empty([num_candidates_model, max_entity_attr_token_len], dtype=torch.int64)
+                for i in range(num_candidates_model):
+                    feature_idx = self.qid2idx[self.entity_qid[idx, i]]
+                    entity_feature[i] = torch.from_numpy(self.entity_text_feature[feature_idx])
+                    entity_mask[i] = torch.from_numpy(self.entity_text_mask[feature_idx])
+            elif dataset_name == "wikidiverse":
+                entity_feature = torch.from_numpy(self.entity_text_feature[idx].copy())
+                entity_mask = 0
             return (
                 mention_feature,
                 mention_mask,
                 start + 1,
                 end + 1,
                 mention_image,
-                entity_feature,
-                entity_mask,
+                entity_feature,  # type: ignore
+                entity_mask,  # type: ignore
                 entity_image,
                 answer,
             )
@@ -171,18 +182,18 @@ def create_datasets():
     qid2name, qid2attr, qid2idx = None, None, None
     if online_bert:
         if entity_text_type == "name":
-            with open(qid2entity_answer_path, "r") as f:
+            with open(qid2entity_path, "r") as f:
                 qid2name = json.load(f)
         elif entity_text_type == "attr":
-            with open(qid2entity_answer_path, "r") as f:
+            with open(qid2entity_path, "r") as f:
                 qid2name = json.load(f)
             with open(qid2attr_path, "r") as f:
                 qid2attr = json.load(f)
-    else:
+    elif dataset_name == "wikimel":
         with open(os.path.join(preprocess_dir, "qid2idx.json"), "r") as f:
             qid2idx = json.load(f)
-    lookup = torch.eye(num_candidates - 1, dtype=torch.int8)
-    all_zero_line = torch.zeros((1, num_candidates - 1), dtype=torch.int8)
+    lookup = torch.eye(num_candidates_data, dtype=torch.int8)
+    all_zero_line = torch.zeros((1, num_candidates_data), dtype=torch.int8)
     lookup = torch.concatenate([lookup, all_zero_line], dim=0)
     tokenizer = BertTokenizer.from_pretrained("bert-base-cased")
     return [

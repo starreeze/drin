@@ -224,8 +224,8 @@ class EntityEncoder(nn.Module):
                     zipped_entity[:, i, :, :] = self.text_encoder(**entity_dict_i)["last_hidden_state"]  # type: ignore
                 encoded_entity = self.unzip_entities(entity_dict, entity_token_sep_idx, self.pooling)
             else:
-                encoded_entity = torch.empty([bs, num_candidates, bert_embed_dim], device="cuda")
-                for i in range(num_candidates):
+                encoded_entity = torch.empty([bs, num_candidates_model, bert_embed_dim], device="cuda")
+                for i in range(num_candidates_model):
                     entity_i = {k: v[:, i, :] for k, v in entity_dict.items()}
                     if entity_final_pooling != "bert default":
                         seq = self.text_encoder(**entity_i)["last_hidden_state"]  # type: ignore
@@ -236,14 +236,18 @@ class EntityEncoder(nn.Module):
                         encoded_entity[:, i, :] = self.text_encoder(**entity_i)["pooler_output"]  # type: ignore
         else:
             entity_feature, entity_mask, entity_image = batch
-            if entity_final_pooling == "bert default":
-                encoded_entity = entity_feature[:, :, 0, :]
-            encoded_entity = torch.empty([bs, num_candidates, bert_embed_dim], device="cuda")
-            for i in range(bs):
-                num_tokens = torch.sum(entity_mask[i], dim=-1)
-                for j in range(num_candidates):
-                    encoded_entity[i, j] = self.pooling(entity_feature[i, j, 1 : num_tokens[j] - 1, :])
-        encoded_entity = self.final_layer(encoded_entity)
+            if dataset_name == "wikidiverse":
+                encoded_entity = entity_feature
+            elif dataset_name == "wikimel":
+                if entity_final_pooling == "bert default":
+                    encoded_entity = entity_feature[:, :, 0, :]
+                else:
+                    encoded_entity = torch.empty([bs, num_candidates_model, bert_embed_dim], device="cuda")
+                    for i in range(bs):
+                        num_tokens = torch.sum(entity_mask[i], dim=-1)
+                        for j in range(num_candidates_model):
+                            encoded_entity[i, j] = self.pooling(entity_feature[i, j, 1 : num_tokens[j] - 1, :])
+        encoded_entity = self.final_layer(encoded_entity)  # type: ignore
         return encoded_entity
 
     @staticmethod
@@ -258,7 +262,7 @@ class EntityEncoder(nn.Module):
     @staticmethod
     def unzip_entities(zipped_entity, entity_token_sep_idx, final_pooling_fn):
         bs = entity_token_sep_idx.shape[0]
-        unzipped_entity = torch.empty([bs, num_candidates, bert_embed_dim], device="cuda")
+        unzipped_entity = torch.empty([bs, num_candidates_model, bert_embed_dim], device="cuda")
         num_entity_per_sentence = entity_token_sep_idx.shape[-1]
         for i in range(bs):
             for j in range(num_entity_sentence):
@@ -266,7 +270,7 @@ class EntityEncoder(nn.Module):
                 for k in range(num_entity_per_sentence):
                     entity_idx = k + j * num_entity_per_sentence
                     current_idx = entity_token_sep_idx[i, j, k]
-                    if entity_idx < num_candidates:
+                    if entity_idx < num_candidates_model:
                         entity_feature = final_pooling_fn(zipped_entity[i, j, last_idx:current_idx, :])
                         unzipped_entity[i, entity_idx, :] = entity_feature
                     last_idx = current_idx + 1
@@ -290,7 +294,7 @@ class Model(nn.Module):
         mention_entity_sep = 4 if online_bert else 5
         encoded_mention = self.mention_encoder(batch[:mention_entity_sep])
         encoded_entity = self.entity_encoder(batch[mention_entity_sep:])
-        encoded_mention = torch.tile(torch.unsqueeze(encoded_mention, 1), [1, num_candidates, 1])
+        encoded_mention = torch.tile(torch.unsqueeze(encoded_mention, 1), [1, num_candidates_model, 1])
         return self.similarity_function(encoded_mention, encoded_entity)
 
 

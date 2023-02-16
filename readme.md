@@ -1,37 +1,47 @@
 # Data
 
-## wikidiverse
+## raw
 
-### train
+### wikidiverse
+
+```
+mention_file -> mention_text_feature/mask, start/end
+mention_image_dir -> mention_image_feature, mention_object_feature/score
+
+candidates_file -> entity_attr_feature/mask
+entity_image_dir -> entity_image_feature, entity_object_feature/score
+```
+
+#### train
 
 all data: 13205
-cleaned data: 10913
-image errors: 7389
-entity missing: 25852
+cleaned data: 13205
+image errors: 46680
+brief missing: 1480
+entity missing: 0
 no matching: 2292
-acc: 82.643
 
-### valid
+#### valid
 
 all data: 1552
-cleaned data: 1302
-image errors: 841
-entity missing: 3145
+cleaned data: 1552
+image errors: 5393
+brief missing: 204
+entity missing: 0
 no matching: 250
-acc: 83.892
 
-### test
+#### test
 
 all data: 1570
-cleaned data: 1288
-image errors: 908
-entity missing: 3028
+cleaned data: 1570
+image errors: 5580
+brief missing: 262
+entity missing: 0
 no matching: 282
-acc: 82.038
 
-## wikimel
+### wikimel
 
-### train
+#### train
 
 all data: 18092
 cleaned data: 17568
@@ -41,7 +51,7 @@ brief missing: 59132
 no matching: 3397
 mention not found: 524
 
-### valid
+#### valid
 
 all data: 2585
 cleaned data: 2516
@@ -51,7 +61,7 @@ brief missing: 7979
 no matching: 510
 mention not found: 69
 
-### test
+#### test
 
 all data: 5169
 cleaned data: 5022
@@ -60,6 +70,8 @@ entity image errors: 55282
 brief missing: 17297
 no matching: 980
 mention not found: 147
+
+## processed
 
 # Method & Result
 
@@ -243,4 +255,4 @@ top-1: 0.46094  top-5: 0.80469  top-10: 0.90625 top-20: 0.96094 top-50: 0.98438
 1. [X] Finetune won't work: as the loss drops also do the metrics. Loss function (BCE) may be problematic.
 2. [X] What will happen if encode the whole mention instead of its name only (with 1. fixed)
 3. [X] Add transformer
-4. [ ] Add image
+4. [X] Add image

@@ -23,12 +23,25 @@ class MELData(Dataset):
         super().__init__()
         self.onehot = inputs[0]
         self.entity_text_feature = inputs[1]
-        self.entity_text_mask = inputs[2]
         self.entity_image_feature = inputs[3]
         self.entity_object_feature = inputs[4]
         self.entity_object_score = inputs[5]
         type = inputs[6]
-        # assert len(entity_text_feature) == len(entity_image_feature) == len(entity_object_feature)
+        if dataset_name == "wikidiverse":
+            self.entity_text_feature = self.entity_text_feature.reshape((-1, num_candidates_model, bert_embed_dim))
+            self.entity_image_feature = self.entity_image_feature.reshape((-1, num_candidates_model, resnet_embed_dim))
+            self.entity_object_feature = self.entity_object_feature.reshape(
+                (-1, num_candidates_model, object_topk["entity"], resnet_embed_dim)
+            )
+            self.entity_object_score = self.entity_object_score.reshape(
+                (-1, num_candidates_model, object_topk["entity"])
+            )
+        elif dataset_name == "wikimel":
+            self.entity_text_mask = inputs[2]
+            with open(os.path.join(preprocess_dir, "qid2idx.json"), "r") as f:
+                self.qid2idx = json.load(f)
+            self.entity_qid = np.load(os.path.join(preprocess_dir, f"entity-name-raw_{type}.npy"))
+            self.entity_qid = self.entity_qid.reshape((-1, num_candidates_model))
         self.mention_text_feature = np.load(
             os.path.join(preprocess_dir, f"mention-text-feature_{type}.npy"), mmap_mode=mention_mmap
         )
@@ -45,10 +58,6 @@ class MELData(Dataset):
         self.miet_similarity = np.load(os.path.join(preprocess_dir, f"similarity-miet_{type}.npy"))
         self.mtei_similarity = np.load(os.path.join(preprocess_dir, f"similarity-eimt_{type}.npy"))
         self.answer = np.load(os.path.join(preprocess_dir, f"answer_{type}.npy"))
-        with open(os.path.join(preprocess_dir, "qid2idx.json"), "r") as f:
-            self.qid2idx = json.load(f)
-        self.entity_qid = np.load(os.path.join(preprocess_dir, f"entity-name-raw_{type}.npy"))
-        self.entity_qid = self.entity_qid.reshape((-1, num_candidates))
         assert (
             len(self.mention_text_feature)
             == len(self.mention_start_pos)
@@ -56,14 +65,25 @@ class MELData(Dataset):
             == len(self.mention_object_feature)
             == len(self.miet_similarity)
             == len(self.answer)
-            == len(self.entity_qid)
         )
 
     def __len__(self):
         return len(self.answer)
 
     def __getitem__(self, idx):
-        entity_idx = list(map(self.qid2idx.get, self.entity_qid[idx]))
+        entity_text_mask = 0
+        if dataset_name == "wikimel":
+            entity_idx = list(map(self.qid2idx.get, self.entity_qid[idx]))
+            entity_text_feature = self._torch_tensor(self.entity_text_feature[entity_idx], entity_mmap)
+            entity_text_mask = self._torch_tensor(self.entity_text_mask[entity_idx])
+            entity_image_feature = self._torch_tensor(self.entity_image_feature[entity_idx], entity_mmap)
+            entity_object_feature = self._torch_tensor(self.entity_object_feature[entity_idx], entity_mmap)
+            entity_object_score = self._torch_tensor(self.entity_object_score[entity_idx])
+        elif dataset_name == "wikidiverse":
+            entity_text_feature = self._torch_tensor(self.entity_text_feature[idx], entity_mmap)
+            entity_image_feature = self._torch_tensor(self.entity_image_feature[idx], entity_mmap)
+            entity_object_feature = self._torch_tensor(self.entity_object_feature[idx], entity_mmap)
+            entity_object_score = self._torch_tensor(self.entity_object_score[idx])
         mention_text_feature = self._torch_tensor(self.mention_text_feature[idx], mention_mmap)
         mention_text_mask = self._torch_tensor(self.mention_text_mask[idx])
         mention_start_pos = self._torch_tensor(self.mention_start_pos[idx])
@@ -73,11 +93,7 @@ class MELData(Dataset):
         mention_object_score = self._torch_tensor(self.mention_object_score[idx])
         miet_similarity = self._torch_tensor(self.miet_similarity[idx])
         mtei_similarity = self._torch_tensor(self.mtei_similarity[idx])
-        entity_text_feature = self._torch_tensor(self.entity_text_feature[entity_idx], entity_mmap)
-        entity_text_mask = self._torch_tensor(self.entity_text_mask[entity_idx])
-        entity_image_feature = self._torch_tensor(self.entity_image_feature[entity_idx], entity_mmap)
-        entity_object_feature = self._torch_tensor(self.entity_object_feature[entity_idx], entity_mmap)
-        entity_object_score = self._torch_tensor(self.entity_object_score[entity_idx])
+
         answer = self._torch_tensor(self.onehot[self.answer[idx]])
         return (
             mention_text_feature,
@@ -87,11 +103,11 @@ class MELData(Dataset):
             mention_image_feature,
             mention_object_feature,
             mention_object_score,
-            entity_text_feature,
+            entity_text_feature,  # type: ignore
             entity_text_mask,
-            entity_image_feature,
-            entity_object_feature,
-            entity_object_score,
+            entity_image_feature,  # type: ignore
+            entity_object_feature,  # type: ignore
+            entity_object_score,  # type: ignore
             miet_similarity,
             mtei_similarity,
             answer,
@@ -128,8 +144,8 @@ class MELData(Dataset):
 
 
 def create_datasets():
-    onehot = np.eye(num_candidates - 1, dtype=np.uint8)
-    all_zero_line = np.zeros((1, num_candidates - 1), dtype=np.uint8)
+    onehot = np.eye(num_candidates_model - 1, dtype=np.uint8)
+    all_zero_line = np.zeros((1, num_candidates_model - 1), dtype=np.uint8)
     onehot = np.concatenate([onehot, all_zero_line], 0)
     entity_text_feature = np.load(os.path.join(preprocess_dir, "entity-attr-feature.npy"), mmap_mode=entity_mmap)
     entity_text_mask = np.load(os.path.join(preprocess_dir, "entity-attr-mask.npy"))

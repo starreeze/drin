@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # @Date    : 2023-02-3 15:40:10
 # @Author  : Shangyu.Xing (starreeze@foxmail.com)
-"""extract image features(mention and entity) with resnet"""
+"""extract image features(mention and entity) with resnet and rcnn"""
 
 from __future__ import annotations
 import json, torch, os, sys, torchvision
@@ -13,19 +13,11 @@ import numpy as np
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(os.path.dirname(SCRIPT_DIR))
-from common.utils import load_image
+from common.utils import load_image, NpyWriter
+from common.args import *
 
 batch_size = 16
-num_workers = 4
-image_input_size = (224, 224)
-default_box = [0, 0, 50, 50]
-object_topk = {"mention": 3, "entity": 1}
-mention_text_path = "/home/data_91_c/xsy/mel-dataset/wikimel/mentions/WIKIMEL_%s.json"
-qid2name_path = "/home/data_91_c/xsy/mel-dataset/wikimel/candidates/qid2ne.json"
-mention_image_dir = "/home/data_91_c/xsy/mel-dataset/wikimel/mentions/KVQAimgs"
-entity_image_dir = "/home/data_91_c/xsy/mel-dataset/wikimel/entities/cleaned-images"
-output_dir = "/data0/xsy/mel"
-default_image = "/home/data_91_c/xsy/mel-dataset/default.jpg"
+num_workers = 0
 extract_feature = True
 extract_object = True
 
@@ -95,14 +87,16 @@ class FeatureExtractor:
     def __init__(self, model):
         self.model = model.to("cuda")
 
-    def infer(self, data, output_type) -> np.ndarray:
-        features = []
+    def infer(self, data, output_type, save_path=None) -> (np.ndarray | NpyWriter):
+        features = NpyWriter(save_path) if save_path else []
         with torch.no_grad():
             for batch in tqdm(data):
-                features.append(self.model(batch.to("cuda"))[output_type].to("cpu"))
-        output = torch.cat(features, dim=0).numpy()
-        s = output.shape
-        return output.reshape(s[0], s[1], s[2] * s[3]).transpose((0, 2, 1))
+                output = self.model(batch.to("cuda"))[output_type].to("cpu").numpy()
+                s = output.shape
+                features.extend(output.reshape(s[0], s[1], s[3] * s[2]).transpose((0, 2, 1)))
+        if not save_path:
+            features = np.concatenate(features, 0)  # type: ignore
+        return features  # type: ignore
 
 
 class ObjectExtractor:
@@ -139,45 +133,48 @@ class Inferrer:
             )
             self.faster_rcnn.eval()
 
-    def infer(self, type: str, name: str, image_file_path: list[str]):
+    def infer(self, type: str, name: str, feature_output: str, object_output: str, image_file_path: list[str]):
         if extract_feature:
             print(f"extracting {name} {type} features")
             image_data = get_loader(ImageData, FeatureProcessor(self.image_processor), image_file_path)
-            output = self.feature_extractor.infer(image_data, "last_hidden_state")
-            np.save(os.path.join(output_dir, f"{name}-image-feature_{type}.npy"), output)
+            output_path = os.path.join(preprocess_dir, f"{name}-image-feature_{type}.npy")
+            features = self.feature_extractor.infer(image_data, feature_output, output_path)
+            features.close()  # type: ignore
 
         if extract_object:
             print(f"extracting {name} {type} objects")
             image_data = get_loader(ImageData, ObjectProcessor(), image_file_path, collate_fn=lambda x: x)
             object_extractor = ObjectExtractor(self.faster_rcnn, object_topk[name])
             boxes, scores = object_extractor.infer(image_data)
+            np.save(os.path.join(preprocess_dir, f"{name}-object-score_{type}.npy"), scores.numpy())
 
             image_data = get_loader(ImageRegionData, FeatureProcessor(self.image_processor), image_file_path, boxes)
-            features = self.feature_extractor.infer(image_data, "last_hidden_state")
-            features = features.reshape(-1, object_topk[name], *(features.shape[1:]))
-
-            assert list(scores.shape) == list(features.shape[:2])
-            np.save(os.path.join(output_dir, f"{name}-object-feature_{type}.npy"), features)
-            np.save(os.path.join(output_dir, f"{name}-object-score_{type}.npy"), scores.numpy())
+            output_path = os.path.join(preprocess_dir, f"{name}-object-feature_{type}.npy")
+            features = self.feature_extractor.infer(image_data, object_output, output_path)
+            features.reshape([-1, object_topk[name], *(features.shape[1:])]).close()  # type: ignore
 
 
 def main():
     inferrer = Inferrer()
-
     for type in ["valid", "train", "test"]:
         with open(mention_text_path % type, "r") as f:
             mention_text = json.load(f)
-        image_file_path = [
-            os.path.join(mention_image_dir, k.split("-")[0])
-            for k, v in mention_text.items()
-            if v["mentions"] in v["sentence"]
-        ]
-        inferrer.infer(type, "mention", image_file_path)
-
-    with open(qid2name_path, "r") as f:
-        qid2name = json.load(f)
-    image_file_path = [os.path.join(entity_image_dir, k) for k in qid2name.keys()]
-    inferrer.infer("all", "entity", image_file_path)
+        if dataset_name == "wikimel":
+            image_file_path = [
+                os.path.join(mention_image_dir, k.split("-")[0])
+                for k, v in mention_text.items()
+                if v["mentions"] in v["sentence"]
+            ]
+        elif dataset_name == "wikidiverse":
+            image_file_path = np.load(os.path.join(preprocess_dir, f"entity-image-path_{type}.npy"))
+            inferrer.infer(type, "entity", "pooler_output", "pooler_output", image_file_path)
+            image_file_path = np.load(os.path.join(preprocess_dir, f"mention-image-path_{type}.npy"))
+        inferrer.infer(type, "mention", "last_hidden_state", "pooler_output", image_file_path)  # type: ignore
+    if dataset_name == "wikimel":
+        with open(qid2entity_path, "r") as f:
+            qid2name = json.load(f)
+        image_file_path = [os.path.join(entity_image_dir, k) for k in qid2name.keys()]
+        inferrer.infer("all", "entity", "pooler_output", "pooler_output", image_file_path)
 
 
 if __name__ == "__main__":
