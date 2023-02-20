@@ -2,6 +2,7 @@ from __future__ import annotations
 from common import args
 from common.args import *
 from common.utils import *
+from datetime import datetime
 import torch
 import lightning as pl
 
@@ -55,8 +56,8 @@ class EpochLogger(pl.Callback):
     def epoch_start(self, trainer: pl.Trainer, model: MELModel, type: str):
         for metric in model.metrics:
             metric.reset()  # type: ignore
-        status_str = f"\n========== Epoch "
-        status_str += f"{trainer.current_epoch + self.start_epoch + 1}/{self.max_epoch} - {type}"
+        status_str = f"\n***** Epoch "
+        status_str += f"{trainer.current_epoch + self.start_epoch + 1}/{self.max_epoch} - {type} - {datetime.now()}"
         print(status_str)
 
     def on_train_epoch_start(self, trainer: pl.Trainer, pl_module: MELModel) -> None:

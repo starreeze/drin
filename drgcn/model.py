@@ -20,6 +20,8 @@ class VertexEncoder(nn.Module):
         super().__init__()
         self.mention_text_encoder = MentionEncoder(inline_bert=False)
         self.entity_text_encoder = EntityEncoder(inline_bert=False)
+        self.mention_image_linear = nn.Linear(resnet_embed_dim, gcn_embed_dim)
+        self.entity_image_linear = nn.Linear(resnet_embed_dim, gcn_embed_dim)
 
     def forward(
         self,
@@ -36,10 +38,11 @@ class VertexEncoder(nn.Module):
             (mention_text_feature, mention_text_mask, mention_start_pos, mention_end_pos, None)
         )
         encoded_entity_text = self.entity_text_encoder((entity_text_feature, entity_text_mask, None))
-        encoded_mention_image = torch.mean(mention_image_feature, dim=-2)
-        encoded_entity_image = entity_image_feature
-        if len(encoded_entity_image.shape) == 4:
-            encoded_entity_image = torch.mean(encoded_entity_image, dim=-2)
+        mention_image_feature = torch.mean(mention_image_feature, dim=-2)
+        encoded_mention_image = self.mention_image_linear(mention_image_feature)
+        if len(entity_image_feature.shape) == 4:
+            entity_image_feature = torch.mean(entity_image_feature, dim=-2)
+        encoded_entity_image = self.entity_image_linear(entity_image_feature)
         return [encoded_mention_text, encoded_mention_image, encoded_entity_text, encoded_entity_image]
 
 
@@ -67,9 +70,11 @@ class EdgeEncoder(nn.Module):
     ):
         mention_text_encoded = self.mention_text_encoder(mention_text_feature, mention_start_pos, mention_end_pos)
         mention_text_encoded = mention_text_encoded.unsqueeze(1).expand(-1, num_candidates_model, -1)
-        mtet = self.similarity_fn(mention_text_encoded, entity_text_feature[:, :, 0])  # entity CLS
+        entity_text_encoded = entity_text_feature[:, :, 0] if len(entity_text_feature.shape) == 4 else entity_text_feature
+        mtet = self.similarity_fn(mention_text_encoded, entity_text_encoded)  # entity CLS
 
-        mention_object_feature = torch.mean(mention_object_feature, dim=-2)
+        if len(mention_object_feature.shape) == 4:
+            mention_object_feature = torch.mean(mention_object_feature, dim=-2)
         mention_object_feature = mention_object_feature.unsqueeze(1).expand(-1, num_candidates_model, -1, -1)
         mention_object_score = mention_object_score.unsqueeze(1).expand(-1, num_candidates_model, -1)
         if len(entity_object_feature.shape) == 5:
@@ -82,7 +87,7 @@ class EdgeEncoder(nn.Module):
                 score = mention_object_score[:, :, i] * entity_object_score[:, :, j]
                 similarity += sim * score
                 scores += score
-        miei = similarity / scores
+        miei = similarity / (scores + 1e-9)
 
         return mtet, miei
 
@@ -94,13 +99,18 @@ class GCNLayer(nn.Module):
     output same shape as input
     """
 
-    # [u --- [e=N(u) --- v=N(e)]]
+    # [u --- [e=N(u) --- v=N(e)]]: mt, mi, et, ei
     vertex_graph = [[[0, 2], [1, 3]], [[2, 2], [3, 3]], [[0, 0], [2, 1]], [[1, 0], [3, 1]]]
-    # [u=N(e) --- e --- v=N(e)]
+    # [u=N(e) --- e --- v=N(e)]: tt, ti, it, ii
     edge_graph = [[0, 2], [0, 3], [1, 2], [1, 3]]
 
     def __init__(self):
         super().__init__()
+        self.w_h, self.w_m = [nn.Linear(gcn_embed_dim, gcn_embed_dim) for _ in range(2)]
+        self.w_e = nn.Linear(gcn_embed_dim, gcn_embed_dim // 2)
+        self.vertex_activation = getattr(nn.functional, gcn_vertex_activation)
+        self.edge_activation = getattr(nn.functional, gcn_edge_activation)
+        self.layer_norm = nn.LayerNorm(gcn_embed_dim)
 
     def forward(self, vertexes: list[torch.Tensor], edges: list[torch.Tensor]):
         new_vertexes, new_edges = [], []
@@ -108,19 +118,24 @@ class GCNLayer(nn.Module):
             new_u = torch.zeros_like(u)
             for ei, vi in neighbors:
                 new_u = new_u + self.convolute_vertex(edges[ei], vertexes[vi])
-            # TODO: linear and activation, then add u
+            new_u = self.vertex_activation(self.layer_norm(self.w_h(new_u + u)))
             new_vertexes.append(new_u)
         for e, (ui, vi) in zip(edges, self.edge_graph):
             new_e = self.convolute_edge(vertexes[ui], vertexes[vi])
-            # TODO: linear and activation, then add e
+            new_e = self.edge_activation(self.w_m(new_e + e))
             new_edges.append(new_e)
         return new_vertexes, new_edges
 
-    def convolute_vertex(self, edge, neighbor):
-        pass
+    def convolute_vertex(self, e, v):
+        # u and v are different
+        if len(v.shape) == 3:  # mention <- entity
+            return torch.mean(e * v, dim=1)  # the same type of edge is averaged
+        # entity <- mention
+        return e * v.unsqueeze(1).expand(-1, num_candidates_model, -1)
 
     def convolute_edge(self, u, v):
-        pass
+        # u: mention, v: entity
+        return torch.cat([self.w_e(u).unsqueeze(1).expand(-1, num_candidates_model, -1), self.w_e(v)], dim=-1)
 
 
 class Model(nn.Module):

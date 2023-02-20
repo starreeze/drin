@@ -28,9 +28,33 @@ def save_np(dir, type, **kwargs):
         np.save(os.path.join(dir, "%s_%s.npy" % (k.replace("_", "-"), type)), data)
 
 
-class WDProcess:
+class MentionPositionProcessor:
     def __init__(self):
         self.tokenizer = BertTokenizer.from_pretrained("bert-base-cased")
+
+    def __call__(self, sentences, starts, ends):
+        before_mention = [sentence[:start] for sentence, start in zip(sentences, starts)]
+        mentions = [sentence[start:end] for sentence, start, end in zip(sentences, starts, ends)]
+        mention_starts = (
+            np.sum(
+                self.tokenizer(before_mention, return_tensors="np", padding=True, truncation=True)["attention_mask"],
+                axis=-1,
+            )
+            - 2  # CLS and End Of Sentence
+        )
+        mention_ends = (
+            np.sum(
+                self.tokenizer(mentions, return_tensors="np", padding=True, truncation=True)["attention_mask"], axis=-1
+            )
+            - 2
+            + mention_starts
+        )
+        return mention_starts, mention_ends
+
+
+class WDProcess:
+    def __init__(self, mention_position_processor):
+        self.mention_position_processor = mention_position_processor
         self.entity2image: dict[str, list[str]] = {}
         print("loading image path dict")
         with open(entity2image_path, "r") as f:
@@ -81,7 +105,7 @@ class WDProcess:
         print("brief missing:", brief_missing_count)
         print("entity missing:", entry_missing_count)
         print("no matching:", no_match_count)
-        start_pos, end_pos = self.get_mention_name_pos(mention_text, start_pos, end_pos)
+        start_pos, end_pos = self.mention_position_processor(mention_text, start_pos, end_pos)
         save_np(
             preprocess_dir,
             type,
@@ -123,35 +147,62 @@ class WDProcess:
             pass
         return image
 
-    def get_mention_name_pos(self, sentences, starts, ends):
-        before_mention = [sentence[:start] for sentence, start in zip(sentences, starts)]
-        mentions = [sentence[start:end] for sentence, start, end in zip(sentences, starts, ends)]
-        mention_starts = (
-            np.sum(
-                self.tokenizer(before_mention, return_tensors="np", padding=True, truncation=True)["attention_mask"],
-                axis=-1,
-            )
-            - 2  # CLS and End Of Sentence
-        )
-        mention_ends = (
-            np.sum(
-                self.tokenizer(mentions, return_tensors="np", padding=True, truncation=True)["attention_mask"], axis=-1
-            )
-            - 2
-            + mention_starts
-        )
-        return mention_starts, mention_ends
-
 
 class WMProcess:
-    pass  # TODO
+    def __init__(self, mention_position_processor) -> None:
+        self.mention_position_processor = mention_position_processor
+        print("building dict...")
+        self.id2candidate: dict[str, list[str]] = {}
+        with open(candidate_path, "r") as f:
+            for line in tqdm(f.readlines()):
+                items = line.strip().split("\t")
+                self.id2candidate[items[0]] = items[1:]
+
+    def __call__(self, type):
+        with open(mention_text_path % type, "r") as f:
+            data: dict[str, dict] = json.load(f)
+        mention_text, start_pos, end_pos, answer, entity_name = [], [], [], [], []
+        no_match_count, mention_not_found = (0, 0)
+        for id, info in tqdm(data.items(), total=len(data)):
+            candidate = self.id2candidate[id]
+            try:
+                start = info["sentence"].index(info["mentions"])
+                start_pos.append(start)
+                end_pos.append(start + len(info["mentions"]))
+            except ValueError:
+                mention_not_found += 1
+                continue
+            try:
+                answer.append(candidate.index(info["answer"]))
+            except ValueError:
+                no_match_count += 1
+                answer.append(num_candidates_data)
+            mention_text.append(info["sentence"])
+            entity_name.extend(candidate + [info["answer"]])  # append answer to the end
+
+        print("=============== statistics =================")
+        print("all data:", len(data))
+        print("cleaned data:", len(mention_text))
+        print("no matching:", no_match_count)
+        print("mention not found:", mention_not_found)
+        start_pos, end_pos = self.mention_position_processor(mention_text, start_pos, end_pos)
+        save_np(
+            preprocess_dir,
+            type,
+            mention_text_raw=mention_text,
+            entity_name_raw=entity_name,
+            start_pos=start_pos,
+            end_pos=end_pos,
+            answer=answer,
+        )
 
 
 def main():
+    mpp = MentionPositionProcessor()
     if dataset_name == "wikidiverse":
-        processor = WDProcess()
+        processor = WDProcess(mpp)
     elif dataset_name == "wikimel":
-        processor = WMProcess()
+        processor = WMProcess(mpp)
     for type in ["valid", "train", "test"]:
         processor(type)  # type: ignore
 

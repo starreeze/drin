@@ -147,29 +147,43 @@ def create_datasets():
     onehot = np.eye(num_candidates_model - 1, dtype=np.uint8)
     all_zero_line = np.zeros((1, num_candidates_model - 1), dtype=np.uint8)
     onehot = np.concatenate([onehot, all_zero_line], 0)
-    entity_text_feature = np.load(os.path.join(preprocess_dir, "entity-attr-feature.npy"), mmap_mode=entity_mmap)
-    entity_text_mask = np.load(os.path.join(preprocess_dir, "entity-attr-mask.npy"))
-    entity_image_feature = np.load(os.path.join(preprocess_dir, "entity-image-feature_all.npy"), mmap_mode=entity_mmap)
-    entity_object_feature = np.load(
-        os.path.join(preprocess_dir, "entity-object-feature_all.npy"), mmap_mode=entity_mmap
-    )
-    entity_object_score = np.load(os.path.join(preprocess_dir, "entity-object-score_all.npy"))
-    return [
-        MELData.get_loader(
-            type,
-            onehot,
-            entity_text_feature,
-            entity_text_mask,
-            entity_image_feature,
-            entity_object_feature,
-            entity_object_score,
+    if dataset_name == 'wikimel':
+        entity_text_feature = np.load(os.path.join(preprocess_dir, "entity-attr-feature.npy"), mmap_mode=entity_mmap)
+        entity_text_mask = np.load(os.path.join(preprocess_dir, "entity-attr-mask.npy"))
+        entity_image_feature = np.load(os.path.join(preprocess_dir, "entity-image-feature_all.npy"), mmap_mode=entity_mmap)
+        entity_object_feature = np.load(
+            os.path.join(preprocess_dir, "entity-object-feature_all.npy"), mmap_mode=entity_mmap
         )
-        for type in ["train", "valid", "test"]
-    ]
+        entity_object_score = np.load(os.path.join(preprocess_dir, "entity-object-score_all.npy"))
+        return [
+            MELData.get_loader(
+                type,
+                onehot,
+                entity_text_feature,
+                entity_text_mask,
+                entity_image_feature,
+                entity_object_feature,
+                entity_object_score,
+            )
+            for type in ["train", "valid", "test"]
+        ]
+    elif dataset_name == 'wikidiverse':
+        return [
+            MELData.get_loader(
+                type,
+                onehot,
+                np.load(os.path.join(preprocess_dir, f"entity-attr-feature_{type}.npy"), mmap_mode=entity_mmap),
+                None,
+                np.load(os.path.join(preprocess_dir, f"entity-image-feature_{type}.npy"), mmap_mode=entity_mmap),
+                np.load(os.path.join(preprocess_dir, f"entity-object-feature_{type}.npy"), mmap_mode=entity_mmap),
+                np.load(os.path.join(preprocess_dir, f"entity-object-score_{type}.npy")),
+            )
+            for type in ["train", "valid", "test"]
+        ]
 
 
 if __name__ == "__main__":
     # pass
-    iter = create_datasets()[0]._get_iterator()
+    iter = create_datasets()[0]._get_iterator() # type: ignore
     x = next(iter)
     print(x)

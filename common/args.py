@@ -4,7 +4,7 @@
 
 ### model
 ##base
-model_type = "baseline"  # baseline or drgcn
+model_type = "drgcn"  # baseline or drgcn
 if model_type == "baseline":
     # if True, extract mention names into independent sentences before bert
     pre_extract_mention = False  # forced to False if online_bert is False or model type is drgcn
@@ -25,6 +25,8 @@ elif model_type == "drgcn":
     mention_final_representation = "avg extract"
     entity_final_layer_name = "linear"
     entity_final_pooling = "avg"
+    gcn_vertex_activation = "gelu"
+    gcn_edge_activation = "sigmoid"
     mention_final_output_dim = gcn_embed_dim
     entity_final_output_dim = gcn_embed_dim
 
@@ -63,7 +65,7 @@ mention_mmap = "r"
 entity_mmap = "r"
 
 ## dataset
-dataset_name = "wikidiverse"
+dataset_name = "wikimel"
 dataset_root = f"/home/data_91_c/xsy/mel-dataset/{dataset_name}/"
 preprocess_dir = f"/data0/xsy/mel/{dataset_name}/"
 default_image = "/home/data_91_c/xsy/mel-dataset/default.jpg"
@@ -73,6 +75,8 @@ if dataset_name == "wikimel":
     max_entity_attr_token_len = 64  # max token length of entity attribute, used in offline bert
     qid2entity_path = dataset_root + "candidates/qid2ne.json"
     qid2attr_path = dataset_root + "entities/qid2abs.json"
+    mention_text_path = dataset_root + "mentions/WIKIMEL_%s.json"
+    candidate_path = dataset_root + "candidates/top100/candidates-answer.tsv"
     mention_image_dir = dataset_root + "mentions/KVQAimgs"
     entity_image_dir = dataset_root + "entities/cleaned-images"
 elif dataset_name == "wikidiverse":
