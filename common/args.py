@@ -24,11 +24,13 @@ elif model_type == "drgcn":
     mention_final_layer_name = "linear"  # linear, transformer or none
     mention_final_representation = "avg extract"
     entity_final_layer_name = "linear"
-    entity_final_pooling = "avg"
+    gcn_edge_feature = "scaler"  # scaler or vector
     gcn_vertex_activation = "gelu"
     gcn_edge_activation = "sigmoid"
+    # do not change the following
     mention_final_output_dim = gcn_embed_dim
     entity_final_output_dim = gcn_embed_dim
+    entity_final_pooling = "avg"
 
 ## encoders
 # bert

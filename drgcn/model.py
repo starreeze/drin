@@ -95,7 +95,7 @@ class EdgeEncoder(nn.Module):
 class GCNLayer(nn.Module):
     """
     vertexes: mention[batch_size, gcn_embed_dim]; entity[batch_size, num_candidates, gcn_embed_dim]
-    edges: [batch_size, num_candidates, gcn_embed_dim]
+    edges: [batch_size, num_candidates(, gcn_embed_dim)]
     output same shape as input
     """
 
@@ -106,8 +106,9 @@ class GCNLayer(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.w_h, self.w_m = [nn.Linear(gcn_embed_dim, gcn_embed_dim) for _ in range(2)]
-        self.w_e = nn.Linear(gcn_embed_dim, gcn_embed_dim // 2)
+        self.w_h = nn.Linear(gcn_embed_dim, gcn_embed_dim)
+        self.w_m = nn.Linear(gcn_embed_dim, gcn_embed_dim) if gcn_edge_feature == 'vector' else nn.Identity()
+        self.w_u, self.w_v = [nn.Linear(gcn_embed_dim, gcn_embed_dim // 2 if gcn_edge_feature == 'vector' else gcn_embed_dim) for _ in range(2)]
         self.vertex_activation = getattr(nn.functional, gcn_vertex_activation)
         self.edge_activation = getattr(nn.functional, gcn_edge_activation)
         self.layer_norm = nn.LayerNorm(gcn_embed_dim)
@@ -127,6 +128,8 @@ class GCNLayer(nn.Module):
         return new_vertexes, new_edges
 
     def convolute_vertex(self, e, v):
+        if gcn_edge_feature == 'scaler':
+            e = e.unsqueeze(-1).expand(-1, -1, gcn_embed_dim)
         # u and v are different
         if len(v.shape) == 3:  # mention <- entity
             return torch.mean(e * v, dim=1)  # the same type of edge is averaged
@@ -135,7 +138,10 @@ class GCNLayer(nn.Module):
 
     def convolute_edge(self, u, v):
         # u: mention, v: entity
-        return torch.cat([self.w_e(u).unsqueeze(1).expand(-1, num_candidates_model, -1), self.w_e(v)], dim=-1)
+        fu = self.w_u(u).unsqueeze(1).expand(-1, num_candidates_model, -1)
+        if gcn_edge_feature == 'vector':
+            return torch.cat([fu, self.w_v(v)], dim=-1)
+        return torch.mean(fu * self.w_v(v), dim=-1)
 
 
 class Model(nn.Module):
@@ -184,7 +190,7 @@ class Model(nn.Module):
             entity_object_score,
         )  # tt, ti, it, ii
         edges = [
-            e.unsqueeze(-1).expand(-1, -1, gcn_embed_dim)
+            e.unsqueeze(-1).expand(-1, -1, gcn_embed_dim) if gcn_edge_feature == 'vector' else e
             for e in (edges[0], mtei_similarity / 100, miet_similarity / 100, edges[1])
         ]
         for gcn_layer in self.gcn_layers:
