@@ -40,24 +40,36 @@ class MELData(Dataset):
             self.entity_text_mask = inputs[2]
             with open(os.path.join(preprocess_dir, "qid2idx.json"), "r") as f:
                 self.qid2idx = json.load(f)
+            print('#', end='')
             self.entity_qid = np.load(os.path.join(preprocess_dir, f"entity-name-raw_{type}.npy"))
             self.entity_qid = self.entity_qid.reshape((-1, num_candidates_model))
+            print('#', end='')
         self.mention_text_feature = np.load(
             os.path.join(preprocess_dir, f"mention-text-feature_{type}.npy"), mmap_mode=mention_mmap
         )
+        print('#', end='')
         self.mention_text_mask = np.load(os.path.join(preprocess_dir, f"mention-text-mask_{type}.npy"))
+        print('#', end='')
         self.mention_start_pos = np.load(os.path.join(preprocess_dir, f"start-pos_{type}.npy"))
+        print('#', end='')
         self.mention_end_pos = np.load(os.path.join(preprocess_dir, f"end-pos_{type}.npy"))
+        print('#', end='')
         self.mention_image_feature = np.load(
             os.path.join(preprocess_dir, f"mention-image-feature_{type}.npy"), mmap_mode=mention_mmap
         )
+        print('#', end='')
         self.mention_object_feature = np.load(
             os.path.join(preprocess_dir, f"mention-object-feature_{type}.npy"), mmap_mode=mention_mmap
         )
+        print('#', end='')
         self.mention_object_score = np.load(os.path.join(preprocess_dir, f"mention-object-score_{type}.npy"))
+        print('#', end='')
         self.miet_similarity = np.load(os.path.join(preprocess_dir, f"similarity-miet_{type}.npy"))
+        print('#', end='')
         self.mtei_similarity = np.load(os.path.join(preprocess_dir, f"similarity-eimt_{type}.npy"))
+        print('#', end='')
         self.answer = np.load(os.path.join(preprocess_dir, f"answer_{type}.npy"))
+        print('\ndata loading completed')
         assert (
             len(self.mention_text_feature)
             == len(self.mention_start_pos)
@@ -147,14 +159,20 @@ def create_datasets():
     onehot = np.eye(num_candidates_model - 1, dtype=np.uint8)
     all_zero_line = np.zeros((1, num_candidates_model - 1), dtype=np.uint8)
     onehot = np.concatenate([onehot, all_zero_line], 0)
+    print('data loading begins...')
     if dataset_name == 'wikimel':
         entity_text_feature = np.load(os.path.join(preprocess_dir, "entity-attr-feature.npy"), mmap_mode=entity_mmap)
+        print('#', end='')
         entity_text_mask = np.load(os.path.join(preprocess_dir, "entity-attr-mask.npy"))
+        print('#', end='')
         entity_image_feature = np.load(os.path.join(preprocess_dir, "entity-image-feature_all.npy"), mmap_mode=entity_mmap)
+        print('#', end='')
         entity_object_feature = np.load(
             os.path.join(preprocess_dir, "entity-object-feature_all.npy"), mmap_mode=entity_mmap
         )
+        print('#', end='')
         entity_object_score = np.load(os.path.join(preprocess_dir, "entity-object-score_all.npy"))
+        print('#', end='')
         return [
             MELData.get_loader(
                 type,

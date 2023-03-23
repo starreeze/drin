@@ -1,4 +1,5 @@
 from __future__ import annotations
+import time
 from common import args
 from common.args import *
 from common.utils import *
@@ -15,14 +16,14 @@ elif args.model_type == "drgcn":
 class MELModel(pl.LightningModule):
     def __init__(self, model) -> None:
         super().__init__()
-        self.metrics = torch.nn.ModuleList([TopkAccuracy(k).to("cuda") for k in metrics_topk]).to("cuda")
+        self.metrics = torch.nn.ModuleList([TopkAccuracy(k).to(use_device) for k in metrics_topk]).to(use_device)
         self.loss = TripletLoss(triplet_margin)
         self.model = model
 
     def forward(self, batch):
         return self.model(batch)
 
-    def _forward_step(self, batch, batch_idx):
+    def _forward_step(self, batch, batch_idx, type):
         log_str = f" {batch_idx}\t"
         y = batch[-1]
         y_hat = self(batch[:-1])
@@ -30,18 +31,18 @@ class MELModel(pl.LightningModule):
         log_str += f"loss: {float(loss):.5f}\t"
         for k, metric in zip(metrics_topk, self.metrics):
             metric.update(y_hat, y)  # type: ignore
-            log_str += f"top-{k}: {float(metric.compute()):.5f}\t"  # type: ignore
+            log_str += f"top-{k}: {float(metric.compute()) / (1-acc_correction[type]):.5f}\t"  # type: ignore
         print(log_str, end="\r")
         return loss
 
     def training_step(self, batch, batch_idx):
-        return self._forward_step(batch, batch_idx)
+        return self._forward_step(batch, batch_idx, 0)
 
     def validation_step(self, batch, batch_idx):
-        return self._forward_step(batch, batch_idx)
+        return self._forward_step(batch, batch_idx, 1)
 
     def test_step(self, batch, batch_idx):
-        return self._forward_step(batch, batch_idx)
+        return self._forward_step(batch, batch_idx, 2)
 
     def configure_optimizers(self):
         return torch.optim.Adam(self.parameters(), lr=learning_rate)
@@ -52,6 +53,13 @@ class EpochLogger(pl.Callback):
         super().__init__()
         self.start_epoch = start_epoch
         self.max_epoch = max_epoch
+        if profiling:
+            self.prof = torch.profiler.profile(
+                schedule=torch.profiler.schedule(wait=1, warmup=1, active=3, repeat=2),
+                on_trace_ready=torch.profiler.tensorboard_trace_handler("log/profiler"),
+                record_shapes=True,
+                with_stack=True,
+            )
 
     def epoch_start(self, trainer: pl.Trainer, model: MELModel, type: str):
         for metric in model.metrics:
@@ -65,6 +73,8 @@ class EpochLogger(pl.Callback):
 
     def on_train_epoch_end(self, trainer: pl.Trainer, pl_module: MELModel) -> None:
         print("")
+        if profiling:
+            self.prof.stop()
 
     def on_validation_epoch_start(self, trainer: pl.Trainer, pl_module: MELModel) -> None:
         self.epoch_start(trainer, pl_module, "validating")
@@ -77,6 +87,29 @@ class EpochLogger(pl.Callback):
 
     def on_test_epoch_end(self, trainer: pl.Trainer, pl_module: MELModel) -> None:
         print("")
+
+    def on_fit_start(self, trainer: "pl.Trainer", pl_module: "pl.LightningModule") -> None:
+        if profiling:
+            self.prof.start()
+
+    def on_train_batch_end(
+        self, trainer: "pl.Trainer", pl_module: "pl.LightningModule", outputs, batch, batch_idx: int
+    ) -> None:
+        if profiling:
+            self.prof.step()
+
+
+def create_trainer(start_epoch) -> pl.Trainer:
+    return pl.Trainer(
+        num_sanity_val_steps=0,
+        enable_checkpointing=False,
+        max_epochs=test_epoch_interval,
+        accelerator="gpu" if use_device == "cuda" else None,
+        devices=1,
+        enable_progress_bar=False,
+        callbacks=EpochLogger(start_epoch, num_epoch),
+        enable_model_summary=False,
+    )
 
 
 def main():
@@ -91,21 +124,18 @@ def main():
     pl.seed_everything(seed)
     datasets = data_module.create_datasets()
     model = MELModel(model_module.Model())
-    try:
-        for i in range(num_epoch // test_epoch_interval):
-            trainer = pl.Trainer(
-                enable_checkpointing=False,
-                max_epochs=test_epoch_interval,
-                accelerator="gpu",
-                devices=1,
-                enable_progress_bar=False,
-                callbacks=EpochLogger(i * test_epoch_interval, num_epoch),
-                enable_model_summary=False,
-            )
-            trainer.fit(model, datasets[0], datasets[1])
-            trainer.test(model, datasets[2])
-    except KeyboardInterrupt:
-        pass
+    if test_only:
+        trainer = create_trainer(0)
+        trainer.test(model, datasets[2])
+        return
+    for i in range(num_epoch // test_epoch_interval):
+        trainer = create_trainer(i * test_epoch_interval)
+        trainer.fit(model, datasets[0], datasets[1])
+        trainer.test(model, datasets[2])
+    print("Training completed")
+    # if use_device == "cuda":
+    #     x = torch.empty([10531 * 1024 * 1024], dtype=torch.uint8)
+    #     time.sleep(60 * 60 * 24)
 
 
 if __name__ == "__main__":

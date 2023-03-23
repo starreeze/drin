@@ -71,6 +71,7 @@ class MELDataset(Dataset):
         if online_bert:
             self.tokenizer = tokenizer
             self.mention_text_raw = np.load(os.path.join(preprocess_dir, "mention-text-raw_%s.npy" % type))
+            print('#', end='')
             if entity_text_type == "name" or entity_text_type == "attr":
                 self.entity_text_raw = np.load(os.path.join(preprocess_dir, "entity-name-raw_%s.npy" % type))
             elif entity_text_type == "brief":
@@ -80,33 +81,46 @@ class MELDataset(Dataset):
             else:
                 raise ValueError("entity_text_type must be either 'name', 'brief' or 'attr'")
             self.entity_text_raw = self.entity_text_raw.reshape((-1, num_candidates_model))
+            print('#', end='')
         else:  # mention feature is aligned with model data but entity is not
             self.mention_text_feature = np.load(
                 os.path.join(preprocess_dir, "mention-text-feature_%s.npy" % type), mmap_mode="r"
             )
+            print('#', end='')
             self.mention_text_mask = np.load(os.path.join(preprocess_dir, "mention-text-mask_%s.npy" % type))
+            print('#', end='')
             if dataset_name == "wikimel":
                 self.entity_qid = np.load(os.path.join(preprocess_dir, "entity-name-raw_%s.npy" % type))
                 self.entity_qid = self.entity_qid.reshape((-1, num_candidates_model))
+                print('#', end='')
                 self.entity_text_feature = np.load(
                     os.path.join(preprocess_dir, f"entity-{entity_text_type}-feature.npy")
                 )
+                print('#', end='')
                 self.entity_text_mask = np.load(os.path.join(preprocess_dir, f"entity-{entity_text_type}-mask.npy"))
+                print('#', end='')
             elif dataset_name == "wikidiverse":
                 self.entity_text_feature = np.load(
                     os.path.join(preprocess_dir, f"entity-{entity_text_type}-feature_{type}.npy")
                 ).reshape((-1, num_candidates_model, bert_embed_dim))
+                print('#', end='')
         self.start_position = np.load(os.path.join(preprocess_dir, "start-pos_%s.npy" % type))
+        print('#', end='')
         self.end_position = np.load(os.path.join(preprocess_dir, "end-pos_%s.npy" % type))
+        print('#', end='')
         self.answer = np.load(os.path.join(preprocess_dir, "answer_%s.npy" % type))
+        print('#', end='')
         if mention_final_layer_name == "multimodal":
             self.mention_image: np.memmap = np.load(
                 os.path.join(preprocess_dir, "mention-image-feature_%s.npy" % type), mmap_mode="r"
             )
+            print('#', end='')
         if entity_final_layer_name == "multimodal":
             self.entity_image: np.memmap = np.load(
                 os.path.join(preprocess_dir, "entity-image-feature_%s.npy" % type), mmap_mode="r"
             )
+            print('#', end='')
+        print('\ndata loading completed')
 
     def __len__(self):
         return len(self.answer)

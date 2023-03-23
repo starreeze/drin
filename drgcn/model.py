@@ -70,7 +70,9 @@ class EdgeEncoder(nn.Module):
     ):
         mention_text_encoded = self.mention_text_encoder(mention_text_feature, mention_start_pos, mention_end_pos)
         mention_text_encoded = mention_text_encoded.unsqueeze(1).expand(-1, num_candidates_model, -1)
-        entity_text_encoded = entity_text_feature[:, :, 0] if len(entity_text_feature.shape) == 4 else entity_text_feature
+        entity_text_encoded = (
+            entity_text_feature[:, :, 0] if len(entity_text_feature.shape) == 4 else entity_text_feature
+        )
         mtet = self.similarity_fn(mention_text_encoded, entity_text_encoded)  # entity CLS
 
         if len(mention_object_feature.shape) == 4:
@@ -79,8 +81,8 @@ class EdgeEncoder(nn.Module):
         mention_object_score = mention_object_score.unsqueeze(1).expand(-1, num_candidates_model, -1)
         if len(entity_object_feature.shape) == 5:
             entity_object_feature = torch.mean(entity_object_feature, dim=-2)
-        similarity = torch.zeros(mention_object_feature.shape[0], num_candidates_model, device="cuda")
-        scores = torch.zeros(mention_object_feature.shape[0], num_candidates_model, device="cuda")
+        similarity = torch.zeros(mention_object_feature.shape[0], num_candidates_model, device=use_device)
+        scores = torch.zeros(mention_object_feature.shape[0], num_candidates_model, device=use_device)
         for i in range(mention_object_feature.shape[2]):
             for j in range(entity_object_feature.shape[2]):
                 sim = self.similarity_fn(mention_object_feature[:, :, i], entity_object_feature[:, :, j])
@@ -107,13 +109,17 @@ class GCNLayer(nn.Module):
     def __init__(self):
         super().__init__()
         self.w_h = nn.Linear(gcn_embed_dim, gcn_embed_dim)
-        self.w_m = nn.Linear(gcn_embed_dim, gcn_embed_dim) if gcn_edge_feature == 'vector' else nn.Identity()
-        self.w_u, self.w_v = [nn.Linear(gcn_embed_dim, gcn_embed_dim // 2 if gcn_edge_feature == 'vector' else gcn_embed_dim) for _ in range(2)]
+        self.w_m = nn.Linear(gcn_embed_dim, gcn_embed_dim) if gcn_edge_feature == "vector" else nn.Identity()
+        self.w_u, self.w_v = [
+            nn.Linear(gcn_embed_dim, gcn_embed_dim // 2 if gcn_edge_feature == "vector" else gcn_embed_dim)
+            for _ in range(2)
+        ]
         self.vertex_activation = getattr(nn.functional, gcn_vertex_activation)
         self.edge_activation = getattr(nn.functional, gcn_edge_activation)
         self.layer_norm = nn.LayerNorm(gcn_embed_dim)
 
     def forward(self, vertexes: list[torch.Tensor], edges: list[torch.Tensor]):
+        edges = [e * m for e, m in zip(edges, gcn_edge_enabled)]
         new_vertexes, new_edges = [], []
         for u, neighbors in zip(vertexes, self.vertex_graph):
             new_u = torch.zeros_like(u)
@@ -121,14 +127,17 @@ class GCNLayer(nn.Module):
                 new_u = new_u + self.convolute_vertex(edges[ei], vertexes[vi])
             new_u = self.vertex_activation(self.layer_norm(self.w_h(new_u + u)))
             new_vertexes.append(new_u)
-        for e, (ui, vi) in zip(edges, self.edge_graph):
-            new_e = self.convolute_edge(vertexes[ui], vertexes[vi])
-            new_e = self.edge_activation(self.w_m(new_e + e))
-            new_edges.append(new_e)
+        if gcn_edge_type == "dynamic":
+            for e, (ui, vi) in zip(edges, self.edge_graph):
+                new_e = self.convolute_edge(vertexes[ui], vertexes[vi])
+                new_e = self.edge_activation(self.w_m(new_e + e))
+                new_edges.append(new_e)
+        else:
+            new_edges = edges
         return new_vertexes, new_edges
 
     def convolute_vertex(self, e, v):
-        if gcn_edge_feature == 'scaler':
+        if gcn_edge_feature == "scaler":
             e = e.unsqueeze(-1).expand(-1, -1, gcn_embed_dim)
         # u and v are different
         if len(v.shape) == 3:  # mention <- entity
@@ -139,7 +148,7 @@ class GCNLayer(nn.Module):
     def convolute_edge(self, u, v):
         # u: mention, v: entity
         fu = self.w_u(u).unsqueeze(1).expand(-1, num_candidates_model, -1)
-        if gcn_edge_feature == 'vector':
+        if gcn_edge_feature == "vector":
             return torch.cat([fu, self.w_v(v)], dim=-1)
         return torch.mean(fu * self.w_v(v), dim=-1)
 
@@ -190,7 +199,7 @@ class Model(nn.Module):
             entity_object_score,
         )  # tt, ti, it, ii
         edges = [
-            e.unsqueeze(-1).expand(-1, -1, gcn_embed_dim) if gcn_edge_feature == 'vector' else e
+            e.unsqueeze(-1).expand(-1, -1, gcn_embed_dim) if gcn_edge_feature == "vector" else e
             for e in (edges[0], mtei_similarity / 100, miet_similarity / 100, edges[1])
         ]
         for gcn_layer in self.gcn_layers:

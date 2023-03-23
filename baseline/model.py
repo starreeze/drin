@@ -54,7 +54,7 @@ class Avg(nn.Module):
     @staticmethod
     def avg(seq, begin, end):
         bs = seq.shape[0]
-        res = torch.empty(bs, seq.shape[-1], device="cuda")
+        res = torch.empty(bs, seq.shape[-1], device=use_device)
         for i in range(bs):
             res[i] = torch.mean(seq[i, begin[i] : end[i]], dim=0)
         return res
@@ -116,7 +116,7 @@ class CrossAttention(nn.Module):
         if mask_b is not None:
             mask_b = mask_b == 0
         else:
-            mask_b = torch.zeros(seq_b.shape[:2], dtype=torch.bool, device="cuda")
+            mask_b = torch.zeros(seq_b.shape[:2], dtype=torch.bool, device=use_device)
         attended_b = self.a2b_attention(seq_a, seq_b, seq_b, key_padding_mask=mask_b, need_weights=False)[0]
         attended_b = self.layernorms[0](attended_b)
         attended_b = self.a2b_ffn(attended_b) + attended_b
@@ -139,7 +139,7 @@ class MultimodalFusion(nn.Module):
         self.score_linear = nn.Linear(mention_final_output_dim * 2, 2)
 
     def forward(self, text_seq, text_mask, image_seq, *args):
-        image_mask = torch.ones(image_seq.shape[:2], dtype=torch.bool, device="cuda")
+        image_mask = torch.ones(image_seq.shape[:2], dtype=torch.bool, device=use_device)
         attended_text = torch.max(self.t2v_attention(text_seq, text_mask, image_seq, image_mask), dim=1)[0]
         attended_text = self.subspace_activation(self.text_linear(attended_text))
         attended_image = torch.max(self.v2t_attention(image_seq, image_mask, text_seq, text_mask), dim=1)[0]
@@ -218,13 +218,13 @@ class EntityEncoder(nn.Module):
         if self.inline_bert:
             entity_dict, entity_token_sep_idx, entity_image = batch
             if num_entity_sentence:
-                zipped_entity = torch.empty([bs, num_entity_sentence, max_bert_len, bert_embed_dim], device="cuda")
+                zipped_entity = torch.empty([bs, num_entity_sentence, max_bert_len, bert_embed_dim], device=use_device)
                 for i in range(num_entity_sentence):
                     entity_dict_i = {k: v[:, i, :] for k, v in entity_dict.items()}
                     zipped_entity[:, i, :, :] = self.text_encoder(**entity_dict_i)["last_hidden_state"]  # type: ignore
                 encoded_entity = self.unzip_entities(entity_dict, entity_token_sep_idx, self.pooling)
             else:
-                encoded_entity = torch.empty([bs, num_candidates_model, bert_embed_dim], device="cuda")
+                encoded_entity = torch.empty([bs, num_candidates_model, bert_embed_dim], device=use_device)
                 for i in range(num_candidates_model):
                     entity_i = {k: v[:, i, :] for k, v in entity_dict.items()}
                     if entity_final_pooling != "bert default":
@@ -242,7 +242,7 @@ class EntityEncoder(nn.Module):
                 if entity_final_pooling == "bert default":
                     encoded_entity = entity_feature[:, :, 0, :]
                 else:
-                    encoded_entity = torch.empty([bs, num_candidates_model, bert_embed_dim], device="cuda")
+                    encoded_entity = torch.empty([bs, num_candidates_model, bert_embed_dim], device=use_device)
                     for i in range(bs):
                         num_tokens = torch.sum(entity_mask[i], dim=-1)
                         for j in range(num_candidates_model):
@@ -262,7 +262,7 @@ class EntityEncoder(nn.Module):
     @staticmethod
     def unzip_entities(zipped_entity, entity_token_sep_idx, final_pooling_fn):
         bs = entity_token_sep_idx.shape[0]
-        unzipped_entity = torch.empty([bs, num_candidates_model, bert_embed_dim], device="cuda")
+        unzipped_entity = torch.empty([bs, num_candidates_model, bert_embed_dim], device=use_device)
         num_entity_per_sentence = entity_token_sep_idx.shape[-1]
         for i in range(bs):
             for j in range(num_entity_sentence):

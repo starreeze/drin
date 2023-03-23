@@ -3,7 +3,7 @@
 # @Author  : Shangyu.Xing (starreeze@foxmail.com)
 
 ### model
-##base
+## base
 model_type = "drgcn"  # baseline or drgcn
 if model_type == "baseline":
     # if True, extract mention names into independent sentences before bert
@@ -24,7 +24,9 @@ elif model_type == "drgcn":
     mention_final_layer_name = "linear"  # linear, transformer or none
     mention_final_representation = "avg extract"
     entity_final_layer_name = "linear"
+    gcn_edge_type = "dynamic"  # static or dynamic
     gcn_edge_feature = "scaler"  # scaler or vector
+    gcn_edge_enabled = [1, 1, 1, 1]  # set to 0 and the corresponding edge will be deleted
     gcn_vertex_activation = "gelu"
     gcn_edge_activation = "sigmoid"
     # do not change the following
@@ -63,13 +65,14 @@ entity_text_type = "attr"  # name, brief, attr; only attr is currently supported
 num_entity_sentence = 12  # if 0, disable zipping: every entity is a sentence
 max_mention_name_len = 32  # max token length of mention name
 max_mention_sentence_len = 128  # max token length of mention sentence, used in online bert
-mention_mmap = "r"
-entity_mmap = "r"
+mention_mmap = None  # change this to 'r' if OOM
+entity_mmap = None
 
 ## dataset
-dataset_name = "wikimel"
+dataset_name = "wikidiverse"
 dataset_root = f"/home/data_91_c/xsy/mel-dataset/{dataset_name}/"
-preprocess_dir = f"/data0/xsy/mel/{dataset_name}/"
+# preprocess_dir = f"/data0/xsy/mel/{dataset_name}/"
+preprocess_dir = f"{dataset_root}/processed"
 default_image = "/home/data_91_c/xsy/mel-dataset/default.jpg"
 if dataset_name == "wikimel":
     num_candidates_data = 100
@@ -95,22 +98,36 @@ num_candidates_model = num_candidates_data + 1  # as the last is reserved for an
 
 ### train
 dataloader_workers = 0
+use_device = "cuda"
 shuffle_train_data = True
-batch_size = 64
+
 seed = 0
-triplet_margin = 0.25
-learning_rate = 1e-3
 num_epoch = 30
 test_epoch_interval = 10
+test_only = False  # directly test the model on test set
 if dataset_name == "wikimel":
     metrics_topk = [1, 5, 10, 20, 50]
+    acc_correction = [0, 0, 0]  # as acc in first stage is higher than 99.5% in wikimel, we omit it here
+    if model_type == 'drgcn':
+        learning_rate = 2e-3
+        triplet_margin = 0.5
+    elif model_type == "baseline":
+        learning_rate = 1e-3
+        triplet_margin = 0.25
+    batch_size = 32
 elif dataset_name == "wikidiverse":
     metrics_topk = [1, 3, 5]
+    # we manually correct the metrics, as the samples failed in the 1st stage
+    # are doomed to fail in the 2nd stage and should not be counted in our metrics of 2nd stage
+    acc_correction = [2292 / 13205, 250 / 1552, 282 / 1570]
+    learning_rate = 1e-3
+    triplet_margin = 0.25
+    batch_size = 64
 
 
 ### debug
+profiling = False
 debug = False
-
 if debug:
     shuffle_train_data = False
     num_epoch = test_epoch_interval = 1
