@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# @Date    : 2023-02-3 15:40:10
+# @Date    : 2023-02-03 15:40:10
 # @Author  : Shangyu.Xing (starreeze@foxmail.com)
 """extract image features(mention and entity) with resnet and rcnn"""
 
@@ -16,10 +16,11 @@ sys.path.append(os.path.dirname(SCRIPT_DIR))
 from common.utils import load_image, NpyWriter
 from common.args import *
 
-batch_size = 16
+batch_size = 1
 num_workers = 0
 extract_feature = True
 extract_object = True
+reshape_image = True
 
 
 class ImageData(Dataset):
@@ -70,15 +71,17 @@ class FeatureProcessor:
     def __init__(self, resnet_processor):
         self.processor = resnet_processor
 
-    def __call__(self, image):
+    def __call__(self, image: Image.Image):
+        image = image.resize(image_input_size)
         return self.processor(image, return_tensors="pt")["pixel_values"].squeeze(0)
 
 
 class ObjectProcessor:
-    """to feed into faster rcnn"""
+    """to feed into object detector"""
 
     def __call__(self, image: Image.Image):
-        return torch.tensor(np.asarray(image).transpose((2, 0, 1)) / np.array(255.0, dtype=np.float32))
+        image = image.resize(image_input_size)
+        return torch.tensor(np.asarray(image, dtype=np.uint8).transpose((2, 0, 1)) / np.array(255.0, dtype=np.float32))
 
 
 class FeatureExtractor:
@@ -87,7 +90,7 @@ class FeatureExtractor:
     def __init__(self, model):
         self.model = model.to("cuda")
 
-    def infer(self, data, output_type, save_path=None) -> (np.ndarray | NpyWriter):
+    def infer(self, data, output_type, save_path=None) -> np.ndarray | NpyWriter:
         features = NpyWriter(save_path) if save_path else []
         with torch.no_grad():
             for batch in tqdm(data):
@@ -128,10 +131,15 @@ class Inferrer:
         resnet = ResNetModel.from_pretrained("microsoft/resnet-152")
         self.feature_extractor = FeatureExtractor(resnet)
         if extract_object:
-            self.faster_rcnn = torchvision.models.detection.fasterrcnn_resnet50_fpn(
-                weights=torchvision.models.detection.FasterRCNN_ResNet50_FPN_Weights.DEFAULT
-            )
-            self.faster_rcnn.eval()
+            if drin_object_detector == "faster_rcnn":
+                self.object_detector = torchvision.models.detection.fasterrcnn_resnet50_fpn(
+                    weights=torchvision.models.detection.FasterRCNN_ResNet50_FPN_Weights.DEFAULT
+                )
+            elif drin_object_detector == "mask_rcnn":
+                self.object_detector = torchvision.models.detection.maskrcnn_resnet50_fpn(
+                    weights=torchvision.models.detection.MaskRCNN_ResNet50_FPN_Weights.DEFAULT
+                )
+            self.object_detector.eval()
 
     def infer(self, type: str, name: str, feature_output: str, object_output: str, image_file_path: list[str]):
         if extract_feature:
@@ -144,7 +152,7 @@ class Inferrer:
         if extract_object:
             print(f"extracting {name} {type} objects")
             image_data = get_loader(ImageData, ObjectProcessor(), image_file_path, collate_fn=lambda x: x)
-            object_extractor = ObjectExtractor(self.faster_rcnn, object_topk[name])
+            object_extractor = ObjectExtractor(self.object_detector, object_topk[name])
             boxes, scores = object_extractor.infer(image_data)
             np.save(os.path.join(preprocess_dir, f"{name}-object-score_{type}.npy"), scores.numpy())
 

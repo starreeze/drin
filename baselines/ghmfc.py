@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 # @Date    : 2023-01-03 10:57:44
 # @Author  : Shangyu.Xing (starreeze@foxmail.com)
-"""implementation of the baseline model (https://github.com/seukgcode/MEL-GHMFC)"""
+"""re-implementation of the ghmfc model (https://github.com/seukgcode/MEL-GHMFC)"""
 
 from __future__ import annotations
 import torch

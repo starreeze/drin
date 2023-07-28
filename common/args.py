@@ -2,12 +2,12 @@
 # @Date    : 2023-01-04 10:01:03
 # @Author  : Shangyu.Xing (starreeze@foxmail.com)
 
-### model
-## base
-model_type = "drgcn"  # baseline or drgcn
-if model_type == "baseline":
+### models and layers
+## model structure
+model_type = "drin"  # ghmfc, melhi or drin
+if model_type == "ghmfc":
     # if True, extract mention names into independent sentences before bert
-    pre_extract_mention = False  # forced to False if online_bert is False or model type is drgcn
+    pre_extract_mention = False  # forced to False if online_bert is False or model type is drin
     mention_final_layer_name = "multimodal"  # linear, transformer, multimodal or none
     # max pool or avg extract, forced to avg extract if mention_final_layer_name is linear and max pool if multimodal bi
     mention_final_representation = "max pool"
@@ -17,13 +17,18 @@ if model_type == "baseline":
     entity_final_output_dim = 768
     multimodal_subspace_activation = "gelu"
     mention_multimodal_attention = "bi"  # text or bi
-elif model_type == "drgcn":
+elif model_type == "melhi":
+    thres_tmim = 0.3
+    thres_imie = 0.3
+    mention_final_layer_name = entity_final_layer_name = "multimodal"  # to ensure data loading
+elif model_type == "drin":
     gcn_embed_dim = 768
     num_gcn_layers = 2
-    # we reuse unimodal mention_encoder and entity_encoder from baseline as vertex feature extractors
+    # we reuse unimodal mention_encoder and entity_encoder from ghmfc as vertex feature extractors
     mention_final_layer_name = "linear"  # linear, transformer or none
     mention_final_representation = "avg extract"
     entity_final_layer_name = "linear"
+    drin_object_detector = "faster_rcnn"
     gcn_edge_type = "dynamic"  # static or dynamic
     gcn_edge_feature = "scaler"  # scaler or vector
     gcn_edge_enabled = [1, 1, 1, 1]  # set to 0 and the corresponding edge will be deleted
@@ -65,14 +70,14 @@ entity_text_type = "attr"  # name, brief, attr; only attr is currently supported
 num_entity_sentence = 12  # if 0, disable zipping: every entity is a sentence
 max_mention_name_len = 32  # max token length of mention name
 max_mention_sentence_len = 128  # max token length of mention sentence, used in online bert
-mention_mmap = None  # change this to 'r' if OOM
+mention_mmap = None  # change these to 'r' if OOM of CPU RAM
 entity_mmap = None
 
 ## dataset
 dataset_name = "wikidiverse"
 dataset_root = f"/home/data_91_c/xsy/mel-dataset/{dataset_name}/"
-# preprocess_dir = f"/data0/xsy/mel/{dataset_name}/"
-preprocess_dir = f"{dataset_root}/processed"
+preprocess_dir = f"/home/data_91_c/xsy/mel-dataset/processed/{dataset_name}/"
+# if image is corrupted, a blank one be used as default
 default_image = "/home/data_91_c/xsy/mel-dataset/default.jpg"
 if dataset_name == "wikimel":
     num_candidates_data = 100
@@ -97,7 +102,7 @@ num_candidates_model = num_candidates_data + 1  # as the last is reserved for an
 
 
 ### train
-dataloader_workers = 0
+dataloader_workers = 8
 use_device = "cuda"
 shuffle_train_data = True
 
@@ -108,13 +113,9 @@ test_only = False  # directly test the model on test set
 if dataset_name == "wikimel":
     metrics_topk = [1, 5, 10, 20, 50]
     acc_correction = [0, 0, 0]  # as acc in first stage is higher than 99.5% in wikimel, we omit it here
-    if model_type == 'drgcn':
-        learning_rate = 2e-3
-        triplet_margin = 0.5
-    elif model_type == "baseline":
-        learning_rate = 1e-3
-        triplet_margin = 0.25
-    batch_size = 32
+    learning_rate = 1e-3
+    triplet_margin = 0.25
+    batch_size = 64
 elif dataset_name == "wikidiverse":
     metrics_topk = [1, 3, 5]
     # we manually correct the metrics, as the samples failed in the 1st stage
@@ -126,9 +127,11 @@ elif dataset_name == "wikidiverse":
 
 
 ### debug
+output_test_result = False
 profiling = False
 debug = False
 if debug:
     shuffle_train_data = False
     num_epoch = test_epoch_interval = 1
     dataloader_workers = 0
+    mention_mmap = entity_mmap = "r"

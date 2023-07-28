@@ -1,258 +1,109 @@
-# Data
+# DRIN
 
-## raw
+Code and data for *DRIN: A Dynamic Relation Interactive Network for Multimodal Entity Linking*. If you find this helpful, please cite our paper.
 
-### wikidiverse
+## Requirements
 
-```
-mention_file -> mention_text_feature/mask, start/end
-mention_image_dir -> mention_image_feature, mention_object_feature/score
+You will need 10GB+ VRAM, 100GB+ RAM and 100GB+ disk storage (1TB+ if processing raw data) to run this efficiently. It is recommended to use python 3.8. Pip requirements are provided in `./requirements.txt`.
 
-candidates_file -> entity_attr_feature/mask
-entity_image_dir -> entity_image_feature, entity_object_feature/score
-```
+## Data
 
-#### train
+We use two datasets to evaluate out model: WikiMEL and WikiDiverse. However, they do not provide complete entity images (our method requires at least one image for each candidate entity). So, we search Wikidata for additional images to construct our datasets. We also open-source the scripts we use, which can be found on https://github.com/starreeze/drin-dataset.
 
-all data: 13205
-cleaned data: 13205
-image errors: 46680
-brief missing: 1480
-entity missing: 0
-no matching: 2292
+Anyway, reproducing our results don't need these scripts. You can access the constructed data on https://www.aliyundrive.com/s/XxehAa6ZvVw (extract code: e81p). We use the fake MP4 format to store the data as the storage provider has set restrictions on sharing zip files. After downloading the mp4 files, put it under the `./dataset` directory. Then run the following script:
 
-#### valid
-
-all data: 1552
-cleaned data: 1552
-image errors: 5393
-brief missing: 204
-entity missing: 0
-no matching: 250
-
-#### test
-
-all data: 1570
-cleaned data: 1570
-image errors: 5580
-brief missing: 262
-entity missing: 0
-no matching: 282
-
-### wikimel
-
-#### train
-
-all data: 18092
-cleaned data: 17568
-mention image errors: 1
-entity image errors: 192968
-brief missing: 59132
-no matching: 3397
-mention not found: 524
-
-#### valid
-
-all data: 2585
-cleaned data: 2516
-mention image errors: 0
-entity image errors: 27366
-brief missing: 7979
-no matching: 510
-mention not found: 69
-
-#### test
-
-all data: 5169
-cleaned data: 5022
-mention image errors: 0
-entity image errors: 55282
-brief missing: 17297
-no matching: 980
-mention not found: 147
-
-## processed
-
-# Method & Result
-
-## 1st step
-
-edit distance
-
-```python
->>> top(ans, 1)
-0.7831541218637993
->>> top(ans, 5)
-0.9185583432895261
->>> top(ans, 10)
-0.9496216646754281
->>> top(ans, 20)
-0.9695340501792115
->>> top(ans, 50)
-0.9864595778574273
+```shell
+cd dataset
+python data_tools.py
 ```
 
-## 2nd step
+It will convert the data back to the zipped format and verify md5 checksums. Then unzip the files as usual.
 
-lr=1e-3, margin=0.25
+### Preprocessed data
 
-### Just bert, mention name independent
-
-w/o finetune:
-
+You can directly use our preprocessed data (recommended).
+Download and unzip the processed data (preprocessed.mp4), and modify the value of `preprocess_dir` in `common/args.py`. It should look like this:
 ```
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃        Test metric        ┃       DataLoader 0        ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│       top-10_epoch        │     0.892274022102356     │
-│        top-1_epoch        │    0.7214257121086121     │
-│       top-20_epoch        │    0.9261250495910645     │
-│       top-50_epoch        │    0.9649541974067688     │
-│        top-5_epoch        │     0.853245735168457     │
-└───────────────────────────┴───────────────────────────┘
-```
-
-w finetune (1 epoch, val result):
-
-```
-top-1:0.75300   top-5:0.93167   top-10:0.96333  top-20:0.97733  top-50:0.99100
+<preprocess_dir>/
+├── wikidiverse/ [54 files in total]
+│   ├── answer_test.npy
+│   ├── answer_train.npy
+│   ├── answer_valid.npy
+│   ├── end-pos_test.npy
+│   ├── ...
+└── wikimel/ [45 files in total]
+    ├── answer_test.npy
+    ├── answer_train.npy
+    ├── answer_valid.npy
+    ├── end-pos_test.npy
+    ├── ...
 ```
 
-### Just bert, mention in complete sentence
+### Raw Data
 
-w finetune (1 epoch):
-
+Otherwise, if you insist on using the raw data, you can download and unzip them (raw-data-*.mp4), and modify the value of `dataset_root` and `default_image` in `common/args.py`. It should look like this:
 ```
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃        Test metric        ┃       DataLoader 0        ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│       top-10_epoch        │    0.9623655676841736     │
-│        top-1_epoch        │    0.7676224708557129     │
-│       top-20_epoch        │     0.980286717414856     │
-│       top-50_epoch        │    0.9896455407142639     │
-│        top-5_epoch        │    0.9305057525634766     │
-└───────────────────────────┴───────────────────────────┘
-```
-
-### Bert + Linear after average, mention in complete sentence
-
-w/o finetune (5 epoch)
-
-```
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃        Test metric        ┃       DataLoader 0        ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│       top-10_epoch        │     0.970927894115448     │
-│        top-1_epoch        │    0.8261649012565613     │
-│       top-20_epoch        │    0.9820788502693176     │
-│       top-50_epoch        │    0.9900438189506531     │
-│        top-5_epoch        │    0.9480286836624146     │
-└───────────────────────────┴───────────────────────────┘
-```
-
-### Bert w/o finetune + Transformer
-
-5 epoch, 8 layers, lr=2e-3, seed=0:
-
-```
-┏━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃        Test metric        ┃       DataLoader 0        ┃
-┡━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│       top-10_epoch        │    0.9366785883903503     │
-│        top-1_epoch        │    0.5416168570518494     │
-│       top-20_epoch        │    0.9679410457611084     │
-│       top-50_epoch        │    0.9872560501098633     │
-│        top-5_epoch        │    0.8757467269897461     │
-└───────────────────────────┴───────────────────────────┘
+<dataset_root>/
+├── default.jpg
+├── wikidiverse/
+│   ├── candidates/
+│   │   ├── test_w_10cands.json
+│   │   ├── train_w_10cands.json
+│   │   └── valid_w_10cands.json
+│   ├── entities/
+│   │   ├── entity2brief_test.json
+│   │   ├── entity2brief_train.json
+│   │   ├── entity2brief_valid.json
+│   │   ├── wikipedia_entity2desc_filtered.tsv
+│   │   └── wikipedia_entity2imgs.tsv
+│   ├── images/ [182684 entries exceeds filelimit, not opening dir]
+│   └── mentions/
+│       ├── test.json
+│       ├── train.json
+│       └── valid.json
+└── wikimel/
+    ├── candidates/
+    │   ├── ne2qid.json
+    │   ├── qid2ne.json
+    │   └── top100/
+    │       ├── all-qids.txt
+    │       ├── candidates-answer.tsv
+    │       └── candidates.tsv
+    ├── entities/
+    │   ├── cleaned-images/ [788403 entries exceeds filelimit, not opening dir]
+    │   ├── qid2abs.json
+    │   ├── qid2brief.json
+    │   └── qid-entity.tsv
+    └── mentions/
+        ├── KVQAimgs [24602 entries exceeds filelimit, not opening dir]
+        ├── WIKIMEL_test.json
+        ├── WIKIMEL_train.json
+        └── WIKIMEL_valid.json
 ```
 
-20 epoch, 8 layers, seed=1:
+Some preprocessing scripts are provided in `./preprocess` for your convenience. You can run it sequentially via
 
-```
-top-1: 0.56477  top-5: 0.87039  top-10: 0.93338 top-20: 0.96918 top-50: 0.98844
-```
-
-10 epoches already reached top. No overfitting.
-
-5 epoch, 2 layers, seed=0:
-
-```
-top-1: 0.61688  top-5: 0.89000  top-10: 0.93857 top-20: 0.96788 top-50: 0.98725
+```shell
+python preprocess/prepare.py
+python preprocess/bert.py
+python preprocess/resnet.py
+python preprocess/clip.py
 ```
 
-20 epoch, 2 layers, seed=1:
+The processed data will be written to `preprocess_dir`. Note that this is needed for each dataset. Modify the value of `dataset_name`  in `common/args.py` and run all the above again for a different dataset.
 
-```
-top-1: 0.67390  top-5: 0.90754  top-10: 0.94977 top-20: 0.97416 top-50: 0.98901
-```
+## Train DRIN
 
-Still slowly accending (+0.1% every epoch for latest 6 epoches).
+Just run:
 
-### Entity brief + Linear
-
-```
-top-1: 0.07969  top-5: 0.28066  top-10: 0.44008 top-20: 0.63598 top-50: 0.88593
+```shell
+python train.py
 ```
 
-### Multimodal cross-attention
+It will train, validate and test the model and output the results.
 
-mention image, 0.5 layer, ~10 epoch, valid:
+See `common/args.py ### train` for super-parameters.
 
-```
-top-1: 0.66433  top-5: 0.90250  top-10: 0.95014 top-20: 0.97655 top-50: 0.99038
-```
+## Baselines
 
-whole sentence as mention representation:
-
-```
-top-1: 0.67250  top-5: 0.90795  top-10: 0.95248 top-20: 0.97754 top-50: 0.99020
-```
-
-with structure same with the paper, 1 layer, 7 epoch, valid:
-
-```
-top-1: 0.63189  top-5: 0.89008  top-10: 0.94184 top-20: 0.97187 top-50: 0.98937
-```
-
-with superparams same with paper, 1 layer, 7 epoch, valid:
-
-```
-top-1: 0.60776  top-5: 0.88499  top-10: 0.93379 top-20: 0.96354 top-50: 0.98763
-```
-
-### Cross-attention + entity attr
-
-mention half cross & extract name, lr=1e-3, margin=0.4, 30 epoch:
-
-```
-top-1: 0.52449  top-5: 0.84687  top-10: 0.92254 top-20: 0.96018 top-50: 0.98726
-```
-
-margin=0.5, metion full cross & sentence maxpool, 30 epoch:
-
-```
-top-1: 0.50976  top-5: 0.82855  top-10: 0.90661 top-20: 0.95599 top-50: 0.98566
-```
-
-offline bert
-
-```
-top-1: 0.46094  top-5: 0.80469  top-10: 0.90625 top-20: 0.96094 top-50: 0.98438
-```
-
-# Explanation for 1st model
-
-1. Why this time much higher?
-   Symmetric: mention encoder and entity encoder are the same. In theroy, same inputs yield to same outputs.
-   So if mention name and entity name is identical, then their similarity will be 1.
-   Therefore, top-1 is always correct if mention name = entity name, which is not rare in dataset.
-2. Why lower than step 1 result?
-   Actually the model is not fully symmetric: we cancatenate entities into 1 sentence separated with SEP.
-   This kind of output for entities diverge slightly from an independent sentence:
-
-# Problems & future work
-
-1. [X] Finetune won't work: as the loss drops also do the metrics. Loss function (BCE) may be problematic.
-2. [X] What will happen if encode the whole mention instead of its name only (with 1. fixed)
-3. [X] Add transformer
-4. [X] Add image
+We reimplemented some baselines in `./baselines`. Modify `model_type` in `common/args.py` and run the train scripts to see the reproduced results.

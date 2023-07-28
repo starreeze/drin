@@ -15,7 +15,7 @@ from common.utils import pad_tokens, load_image
 from common.args import *
 
 
-batch_size = 1  # larger than 1 will result in clip errors
+batch_size = 1  # larger than 1 will result in clip errors. DO NOT MODIFY
 num_workers = 0
 max_clip_len = 77
 process_mention = True

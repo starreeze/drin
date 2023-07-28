@@ -7,13 +7,13 @@ from __future__ import annotations
 import torch
 from torch import nn
 from common.args import *
-from baseline.model import MentionEncoder, EntityEncoder
+from baselines.ghmfc import MentionEncoder, EntityEncoder
 
 
 class VertexEncoder(nn.Module):
     """
     Encode the 4 types of vertex:
-    text vertex is controlled by the args same as baseline; for image vertex we just apply avg pooling
+    text vertex is controlled by the args same as ghmfc; for image vertex we just apply avg pooling
     """
 
     def __init__(self):

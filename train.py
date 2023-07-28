@@ -1,5 +1,4 @@
 from __future__ import annotations
-import time
 from common import args
 from common.args import *
 from common.utils import *
@@ -7,10 +6,15 @@ from datetime import datetime
 import torch
 import lightning as pl
 
-if args.model_type == "baseline":
-    from baseline import data as data_module, model as model_module
-elif args.model_type == "drgcn":
-    from drgcn import data as data_module, model as model_module
+if args.model_type == "ghmfc":
+    from baselines import data as data_module, ghmfc as model_module
+elif args.model_type == "melhi":
+    from baselines import data as data_module, melhi as model_module
+elif args.model_type == "drin":
+    from drin import data as data_module, model as model_module
+
+if output_test_result:
+    result_file = open('test-result.txt', 'w')
 
 
 class MELModel(pl.LightningModule):
@@ -33,6 +37,10 @@ class MELModel(pl.LightningModule):
             metric.update(y_hat, y)  # type: ignore
             log_str += f"top-{k}: {float(metric.compute()) / (1-acc_correction[type]):.5f}\t"  # type: ignore
         print(log_str, end="\r")
+        if output_test_result and type == 2:
+            for i, sample in enumerate(y_hat.to('cpu').tolist()):
+                result_file.write(f'{i + batch_idx * batch_size}:\t{sample}\n{y[i]}\n')
+                result_file.flush()
         return loss
 
     def training_step(self, batch, batch_idx):
@@ -84,6 +92,8 @@ class EpochLogger(pl.Callback):
 
     def on_test_epoch_start(self, trainer: pl.Trainer, pl_module: MELModel) -> None:
         self.epoch_start(trainer, pl_module, "testing")
+        if output_test_result:
+            result_file.write('==========  Test ==========\n')
 
     def on_test_epoch_end(self, trainer: pl.Trainer, pl_module: MELModel) -> None:
         print("")
@@ -101,7 +111,7 @@ class EpochLogger(pl.Callback):
 
 def create_trainer(start_epoch) -> pl.Trainer:
     return pl.Trainer(
-        num_sanity_val_steps=0,
+        num_sanity_val_steps=2 if args.debug else 0,
         enable_checkpointing=False,
         max_epochs=test_epoch_interval,
         accelerator="gpu" if use_device == "cuda" else None,
@@ -132,6 +142,8 @@ def main():
         trainer = create_trainer(i * test_epoch_interval)
         trainer.fit(model, datasets[0], datasets[1])
         trainer.test(model, datasets[2])
+    if output_test_result:
+        result_file.close()
     print("Training completed")
     # if use_device == "cuda":
     #     x = torch.empty([10531 * 1024 * 1024], dtype=torch.uint8)

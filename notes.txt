@@ -1,3 +1,0 @@
-1. do everything in train_step - update metric, optimizers, etc.
-2. use tensor() function instead of Tensor() constructor 
-3. multiple network means multiple computation graph: the memory consumption is also multiplied; rebatch is no use
