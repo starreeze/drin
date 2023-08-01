@@ -1,6 +1,10 @@
 # DRIN
 
-Code and data for *DRIN: A Dynamic Relation Interactive Network for Multimodal Entity Linking*. If you find this helpful, please cite our paper.
+Code and data for *DRIN: A Dynamic Relation Interactive Network for Multimodal Entity Linking*.
+
+![structure.jpg](D:\workspace\drin\assets\structure.jpg)
+
+If you find this helpful, please cite our paper.
 
 ## Requirements
 
@@ -23,6 +27,7 @@ It will convert the data back to the zipped format and verify md5 checksums. The
 
 You can directly use our preprocessed data (recommended).
 Download and unzip the processed data (preprocessed.mp4), and modify the value of `preprocess_dir` in `common/args.py`. It should look like this:
+
 ```
 <preprocess_dir>/
 ├── wikidiverse/ [54 files in total]
@@ -42,6 +47,7 @@ Download and unzip the processed data (preprocessed.mp4), and modify the value o
 ### Raw Data
 
 Otherwise, if you insist on using the raw data, you can download and unzip them (raw-data-*.mp4), and modify the value of `dataset_root` and `default_image` in `common/args.py`. It should look like this:
+
 ```
 <dataset_root>/
 ├── default.jpg
