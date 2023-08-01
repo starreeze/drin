@@ -2,7 +2,7 @@
 
 Code and data for *DRIN: A Dynamic Relation Interactive Network for Multimodal Entity Linking*.
 
-![structure.jpg](D:\workspace\drin\assets\structure.jpg)
+![structure.jpg](assets/structure.jpg)
 
 If you find this helpful, please cite our paper.
 
