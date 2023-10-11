@@ -1,6 +1,17 @@
 # DRIN
 
-Code and data for *DRIN: A Dynamic Relation Interactive Network for Multimodal Entity Linking*. If you find this helpful, please cite our paper.
+Code and data for [DRIN: A Dynamic Relation Interactive Network for Multimodal Entity Linking](https://arxiv.org/abs/2310.05589). If you find this helpful, please cite our paper.
+
+```
+@misc{xing2023drin,
+    title={DRIN: Dynamic Relation Interactive Network for Multimodal Entity Linking}, 
+    author={Shangyu Xing and Fei Zhao and Zhen Wu and Chunhui Li and Jianbing Zhang and Xinyu Dai},
+    year={2023},
+    eprint={2310.05589},
+    archivePrefix={arXiv},
+    primaryClass={cs.CL}
+}
+```
 
 ## Requirements
 
