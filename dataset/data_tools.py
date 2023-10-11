@@ -26,6 +26,7 @@ After encoding and decoding the md5 checksum will be verified to ensure integrit
 
 import os, sys, hashlib, io
 from tqdm import tqdm
+from logging import getLogger
 
 raw_file_list = [
     "preprocessed.tar.gz",
@@ -56,7 +57,7 @@ def md5(filename):
     hash_md5 = hashlib.md5()
     file_len = os.path.getsize(filename)
     with open(filename, "rb") as f:
-        for chunk in tqdm(iter(lambda: f.read(4096), b""), total=file_len // 4096):
+        for chunk in tqdm(iter(lambda: f.read(4096), b""), total=(file_len + 4095) // 4096):
             hash_md5.update(chunk)
     return hash_md5.hexdigest()
 
@@ -81,13 +82,19 @@ def recover_header(filename):
 
 
 def main():
+    logger = getLogger()
+
     if len(sys.argv) == 2 and sys.argv[1] == "--encode":
         md5_list = []
         for filename, encoded_filename in zip(raw_file_list, encoded_file_list):
-            print(f"encoding {filename} -> {encoded_filename}")
+            if not os.path.exists(filename):
+                logger.warning(f"{filename} not found, skipping...")
+                continue
+            logger.info(f"generating md5 checksum for {filename}...")
             md5_list.append(md5(filename))
             os.rename(filename, encoded_filename)
             mimic_header(encoded_filename)
+            logger.info(f"encode {filename} -> {encoded_filename} successfully.")
         with open(md5_path, "w") as f:
             f.write('\n'.join(md5_list))
         return
@@ -95,16 +102,19 @@ def main():
     with open(md5_path, "r") as f:
         md5_list = f.read().splitlines()
     for filename, encoded_filename, md5_value in zip(raw_file_list, encoded_file_list, md5_list):
-        print(f"decoding {encoded_filename} -> {filename}")
+        if not os.path.exists(encoded_filename):
+            logger.warning(f"{encoded_filename} not found, skipping...")
+            continue
         os.rename(encoded_filename, filename)
         recover_header(filename)
+        logger.info(f"decode {encoded_filename} -> {filename} successfully, verifying md5 checksum...")
         if md5_value != md5(filename):
-            print(
-                f"ERROR: MD5 checksum verification FAILED for file {filename} ({encoded_filename}),"
+            logger.error(
+                f"MD5 checksum verification FAILED for file {filename} ({encoded_filename}),"
                 " please try re-downloading the file."
             )
         else:
-            print(f"Conversion done for file {filename}. MD5 checksum verification PASSED.")
+            logger.info(f"Conversion done for file {filename}. MD5 checksum verification PASSED.")
 
 
 if __name__ == "__main__":

@@ -102,6 +102,10 @@ def load_image(basename, default_image):
 
 class NpyWriter:
     """
+    Modified from https://github.com/nicolamontecchio/npy-streaming-writer.
+    Two new methods are added compared to the original version.
+    If the use is improper, please feel free to contact us.
+
     An object to facilitate writing numerical data to disk, without
     the need for holding the whole data in memory at once at any point
     in time.
@@ -178,6 +182,7 @@ class NpyWriter:
         self.n_items += 1
 
     def extend(self, item):
+        # new method add by starreeze, compared to the version from nicolamontecchio
         for i in item:
             self.append(i)
 
@@ -186,6 +191,7 @@ class NpyWriter:
         return self.item_shape  # type: ignore
 
     def reshape(self, shape):
+        # new method add by starreeze, compared to the version from nicolamontecchio
         shape = list(shape)
         if shape.count(-1) > 1:
             raise RuntimeError("invalid input shape %s" % (str(shape)))
