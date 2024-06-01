@@ -24,31 +24,10 @@ This is recognized as an mp4 file.
 After encoding and decoding the md5 checksum will be verified to ensure integrity.
 """
 
-import os, sys, hashlib, io
+import os, hashlib, io
 from tqdm import tqdm
-from logging import getLogger
+from argparse import ArgumentParser
 
-raw_file_list = [
-    "preprocessed.tar.gz",
-    "raw-data.z01",
-    "raw-data.z02",
-    "raw-data.z03",
-    "raw-data.z04",
-    "raw-data.z05",
-    "raw-data.zip",
-]
-encoded_file_list = [
-    "preprocessed.mp4",
-    "raw-data-1.mp4",
-    "raw-data-2.mp4",
-    "raw-data-3.mp4",
-    "raw-data-4.mp4",
-    "raw-data-5.mp4",
-    "raw-data-6.mp4",
-]
-# raw_file_list = ["preprocessed.tar.gz"]
-# encoded_file_list = ["preprocessed.mp4"]
-md5_path = "drin-datasets.md5"
 mp4_header = b"\x00\x00\x00 ftypisom\x00\x00\x02\x00isomiso2avc1mp41"
 header_len = len(mp4_header)
 
@@ -81,40 +60,59 @@ def recover_header(filename):
         f.truncate()
 
 
-def main():
-    logger = getLogger()
+def parse_args():
+    parser = ArgumentParser()
+    parser.add_argument("--dir", default=".")
+    parser.add_argument("--encode", action="store_true")
+    parser.add_argument("--raw_files", nargs="+", default=[])
+    parser.add_argument("--encoded_files", nargs="+", default=[])
+    return parser.parse_args()
 
-    if len(sys.argv) == 2 and sys.argv[1] == "--encode":
-        md5_list = []
-        for filename, encoded_filename in zip(raw_file_list, encoded_file_list):
-            if not os.path.exists(filename):
-                logger.warning(f"{filename} not found, skipping...")
-                continue
-            logger.info(f"generating md5 checksum for {filename}...")
-            md5_list.append(md5(filename))
-            os.rename(filename, encoded_filename)
-            mimic_header(encoded_filename)
-            logger.info(f"encode {filename} -> {encoded_filename} successfully.")
-        with open(md5_path, "w") as f:
-            f.write('\n'.join(md5_list))
-        return
 
-    with open(md5_path, "r") as f:
-        md5_list = f.read().splitlines()
-    for filename, encoded_filename, md5_value in zip(raw_file_list, encoded_file_list, md5_list):
-        if not os.path.exists(encoded_filename):
-            logger.warning(f"{encoded_filename} not found, skipping...")
+def encode(args):
+    md5_list = []
+    for raw_name, encoded_name in zip(args.raw_files, args.encoded_files):
+        raw_path = os.path.join(args.dir, raw_name)
+        encoded_path = os.path.join(args.dir, encoded_name)
+        if not os.path.exists(raw_path):
+            print(f"{raw_path} not found, skipping...")
             continue
-        os.rename(encoded_filename, filename)
-        recover_header(filename)
-        logger.info(f"decode {encoded_filename} -> {filename} successfully, verifying md5 checksum...")
-        if md5_value != md5(filename):
-            logger.error(
-                f"MD5 checksum verification FAILED for file {filename} ({encoded_filename}),"
+        print(f"generating md5 checksum for {raw_path}...")
+        md5_list.append(md5(raw_path))
+        os.rename(raw_path, encoded_path)
+        mimic_header(encoded_path)
+        print(f"encode {raw_path} -> {encoded_path} successfully.")
+    with open(os.path.join(args.dir, "md5"), "w") as f:
+        f.write("\n".join(md5_list))
+
+
+def decode(args):
+    with open(os.path.join(args.dir, "md5"), "r") as f:
+        md5_list = f.read().splitlines()
+    for raw_name, encoded_name, md5_value in zip(args.raw_files, args.encoded_files, md5_list):
+        raw_path = os.path.join(args.dir, raw_name)
+        encoded_path = os.path.join(args.dir, encoded_name)
+        if not os.path.exists(encoded_path):
+            print(f"{encoded_path} not found, skipping...")
+            continue
+        os.rename(encoded_path, raw_path)
+        recover_header(raw_path)
+        print(f"decode {encoded_path} -> {raw_path} successfully, verifying md5 checksum...")
+        if md5_value != md5(raw_path):
+            print(
+                f"MD5 checksum verification FAILED for file {raw_path} ({encoded_path}),"
                 " please try re-downloading the file."
             )
         else:
-            logger.info(f"Conversion done for file {filename}. MD5 checksum verification PASSED.")
+            print(f"Conversion done for file {raw_path}. MD5 checksum verification PASSED.")
+
+
+def main():
+    args = parse_args()
+    if args.encode:
+        encode(args)
+    else:
+        decode(args)
 
 
 if __name__ == "__main__":

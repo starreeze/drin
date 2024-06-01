@@ -8,7 +8,7 @@ If you find this helpful, please cite our paper.
 
 ```
 @misc{xing2023drin,
-    title={DRIN: Dynamic Relation Interactive Network for Multimodal Entity Linking}, 
+    title={DRIN: Dynamic Relation Interactive Network for Multimodal Entity Linking},
     author={Shangyu Xing and Fei Zhao and Zhen Wu and Chunhui Li and Jianbing Zhang and Xinyu Dai},
     year={2023},
     eprint={2310.05589},
@@ -29,7 +29,9 @@ Anyway, reproducing our results don't need these scripts. You can access the con
 
 ```shell
 cd dataset
-python data_tools.py
+python data_tools.py \
+    --raw_files preprocessed.tar.gz raw-data.z01 raw-data.z02 raw-data.z03 raw-data.z04 raw-data.z05 raw-data.zip \
+    --encoded_files preprocessed.mp4 raw-data-1.mp4 raw-data-2.mp4 raw-data-3.mp4 raw-data-4.mp4 raw-data-5.mp4 raw-data-6.mp4
 ```
 
 It will convert the data back to the zipped format and verify md5 checksums. Then unzip the files as usual.
@@ -107,7 +109,7 @@ python preprocess/resnet.py
 python preprocess/clip.py
 ```
 
-The processed data will be written to `preprocess_dir`. Note that this is needed for each dataset. Modify the value of `dataset_name`  in `common/args.py` and run all the above again for a different dataset.
+The processed data will be written to `preprocess_dir`. Note that this is needed for each dataset. Modify the value of `dataset_name` in `common/args.py` and run all the above again for a different dataset.
 
 ## Train DRIN
 
