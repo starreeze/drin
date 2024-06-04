@@ -24,12 +24,13 @@ This is recognized as an mp4 file.
 After encoding and decoding the md5 checksum will be verified to ensure integrity.
 """
 
-import os, hashlib, io
+import os, hashlib, io, json
 from tqdm import tqdm
 from argparse import ArgumentParser
 
 mp4_header = b"\x00\x00\x00 ftypisom\x00\x00\x02\x00isomiso2avc1mp41"
 header_len = len(mp4_header)
+md5_filename = "md5.json"
 
 
 def md5(filename):
@@ -64,32 +65,36 @@ def parse_args():
     parser = ArgumentParser()
     parser.add_argument("--dir", default=".")
     parser.add_argument("--encode", action="store_true")
+    parser.add_argument("--skip_checksum", action="store_true")
     parser.add_argument("--raw_files", nargs="+", default=[])
     parser.add_argument("--encoded_files", nargs="+", default=[])
     return parser.parse_args()
 
 
 def encode(args):
-    md5_list = []
+    md5_dict = {}
     for raw_name, encoded_name in zip(args.raw_files, args.encoded_files):
         raw_path = os.path.join(args.dir, raw_name)
         encoded_path = os.path.join(args.dir, encoded_name)
         if not os.path.exists(raw_path):
             print(f"{raw_path} not found, skipping...")
             continue
-        print(f"generating md5 checksum for {raw_path}...")
-        md5_list.append(md5(raw_path))
+        if not args.skip_checksum:
+            print(f"Generating md5 checksum for {raw_path}...")
+            md5_dict[raw_name] = md5(raw_path)
         os.rename(raw_path, encoded_path)
         mimic_header(encoded_path)
-        print(f"encode {raw_path} -> {encoded_path} successfully.")
-    with open(os.path.join(args.dir, "md5"), "w") as f:
-        f.write("\n".join(md5_list))
+        print(f"Encode {raw_path} -> {encoded_path} successfully.")
+    if not args.skip_checksum:
+        with open(os.path.join(args.dir, md5_filename), "w") as f:
+            json.dump(md5_dict, f)
 
 
 def decode(args):
-    with open(os.path.join(args.dir, "md5"), "r") as f:
-        md5_list = f.read().splitlines()
-    for raw_name, encoded_name, md5_value in zip(args.raw_files, args.encoded_files, md5_list):
+    if not args.skip_checksum:
+        with open(os.path.join(args.dir, md5_filename), "r") as f:
+            md5_dict = json.load(f)
+    for raw_name, encoded_name in zip(args.raw_files, args.encoded_files):
         raw_path = os.path.join(args.dir, raw_name)
         encoded_path = os.path.join(args.dir, encoded_name)
         if not os.path.exists(encoded_path):
@@ -97,14 +102,16 @@ def decode(args):
             continue
         os.rename(encoded_path, raw_path)
         recover_header(raw_path)
-        print(f"decode {encoded_path} -> {raw_path} successfully, verifying md5 checksum...")
-        if md5_value != md5(raw_path):
-            print(
-                f"MD5 checksum verification FAILED for file {raw_path} ({encoded_path}),"
-                " please try re-downloading the file."
-            )
-        else:
-            print(f"Conversion done for file {raw_path}. MD5 checksum verification PASSED.")
+        print(f"Decode {encoded_path} -> {raw_path} successfully.")
+        if not args.skip_checksum:
+            print("Verifying md5 checksum...")
+            if md5_dict[raw_name] != md5(raw_path):
+                print(
+                    f"MD5 checksum verification FAILED for file {raw_path} ({encoded_path}),"
+                    " please try re-downloading the file."
+                )
+            else:
+                print(f"Conversion done for file {raw_path}. MD5 checksum verification PASSED.")
 
 
 def main():
