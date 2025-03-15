@@ -25,21 +25,25 @@ You will need 10GB+ VRAM, 100GB+ RAM and 100GB+ disk storage (1TB+ if processing
 
 We use two datasets to evaluate out model: WikiMEL and WikiDiverse. However, they do not provide complete entity images (our method requires at least one image for each candidate entity). So, we search Wikidata for additional images to construct our datasets. We also open-source the scripts we use, which can be found on https://github.com/starreeze/drin-dataset.
 
-Anyway, reproducing our results don't need these scripts. You can access the constructed data on https://www.aliyundrive.com/s/XxehAa6ZvVw (extract code: e81p). We use the fake MP4 format to store the data as the storage provider has set restrictions on sharing zip files. After downloading the mp4 files, put it under the `./dataset` directory. Then run the following script:
+Anyway, reproducing our results don't need these scripts. You can access the constructed data through two ways:
 
-```shell
-cd dataset
-python data_tools.py \
-    --raw_files preprocessed.tar.gz raw-data.z01 raw-data.z02 raw-data.z03 raw-data.z04 raw-data.z05 raw-data.zip \
-    --encoded_files preprocessed.mp4 raw-data-1.mp4 raw-data-2.mp4 raw-data-3.mp4 raw-data-4.mp4 raw-data-5.mp4 raw-data-6.mp4
-```
+1. [Aliyun webdrive](https://www.aliyundrive.com/s/XxehAa6ZvVw) (extract code: e81p). We use the fake MP4 format to store the data as the storage provider has set restrictions on sharing zip files. After downloading the mp4 files, put it under the `./dataset` directory. Then run the following script:
 
-It will convert the data back to the zipped format and verify md5 checksums. Then unzip the files as usual.
+    ```shell
+    cd dataset
+    python data_tools.py \
+        --raw_files preprocessed.tar.gz raw-data.z01 raw-data.z02 raw-data.z03 raw-data.z04 raw-data.z05 raw-data.zip \
+        --encoded_files preprocessed.mp4 raw-data-1.mp4 raw-data-2.mp4 raw-data-3.mp4 raw-data-4.mp4 raw-data-5.mp4 raw-data-6.mp4
+    ```
+    
+    It will convert the data back to the zipped format and verify md5 checksums. Then unzip the files as usual.
+
+2. [Huggingface dataset](https://huggingface.co/datasets/starreeze/drin-dataset). Only preprocessed data are available.
 
 ### Preprocessed data
 
 You can directly use our preprocessed data (recommended).
-Download and unzip the processed data `preprocessed.mp4`, and modify the value of `preprocess_dir` in `common/args.py`. It should look like this:
+Download and unzip the processed data `preprocessed.tar.gz`, and modify the value of `preprocess_dir` in `common/args.py`. It should look like this:
 
 ```
 <preprocess_dir>/
